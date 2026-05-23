@@ -380,7 +380,31 @@
     markDirty();
   });
 
+  // ---- Auto-hide HUD when mouse is idle --------------------------------
+  const hud = document.getElementById('hud');
+  const IDLE_MS = 2000;
+  let idleTimer = null;
+  let mouseOverHud = false;
+
+  function showHud() {
+    hud.classList.remove('idle');
+    document.body.style.cursor = '';
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (!mouseOverHud) {
+        hud.classList.add('idle');
+        document.body.style.cursor = 'none';
+      }
+    }, IDLE_MS);
+  }
+  document.addEventListener('mousemove', showHud);
+  document.addEventListener('mousedown', showHud);
+  hud.addEventListener('mouseenter', () => { mouseOverHud = true; showHud(); });
+  hud.addEventListener('mouseleave', () => { mouseOverHud = false; showHud(); });
+  showHud();
+
   document.addEventListener('keydown', e => {
+    showHud();
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     if (e.code === 'ArrowLeft') seekPatternStart();

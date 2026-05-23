@@ -34,6 +34,12 @@ html, body {
   right: 0;
   pointer-events: none;
   padding: 16px;
+  transition: opacity 0.4s ease;
+}
+
+#hud.idle {
+  opacity: 0;
+  pointer-events: none;
 }
 
 #transport {
