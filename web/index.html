@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zoetrope</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <div id="hud">
+    <div id="transport">
+      <button id="btn-pl-start" title="Start of playlist">|&lt;</button>
+      <button id="btn-pat-start" title="Start of current pattern">&lt;</button>
+      <button id="btn-play" title="Play / Pause">▶</button>
+      <button id="btn-stop" title="Stop">■</button>
+      <button id="btn-next" title="Next pattern">&gt;</button>
+      <label class="speed">
+        Speed
+        <select id="speed">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+        </select>
+      </label>
+      <span id="now-playing"></span>
+      <button id="btn-toggle-editor" title="Show/hide editor">⚙</button>
+    </div>
+  </div>
+
+  <aside id="editor" class="hidden">
+    <header>
+      <h2>Playlist</h2>
+      <button id="btn-add" title="Add item">+</button>
+    </header>
+    <div class="global">
+      <label>Background <input type="color" id="bg-color"></label>
+    </div>
+    <ol id="playlist"></ol>
+    <footer>
+      <button id="btn-save">Save</button>
+      <button id="btn-revert">Revert</button>
+      <span id="save-status"></span>
+    </footer>
+  </aside>
+
+  <template id="item-template">
+    <li class="item">
+      <div class="row">
+        <span class="handle" title="Drag to reorder">⋮⋮</span>
+        <select class="pattern">
+          <option value="h-sweep">Horizontal sweep</option>
+          <option value="v-sweep">Vertical sweep</option>
+          <option value="bounce">Bounce</option>
+          <option value="circle">Circle</option>
+          <option value="figure-8">Figure 8</option>
+        </select>
+        <input type="color" class="color">
+        <button class="del" title="Remove">×</button>
+      </div>
+      <div class="row params">
+        <label>Size <input type="number" class="ballSize" min="2" max="200" step="1"></label>
+        <label>Duration <input type="number" class="duration" min="0.1" max="60" step="0.1"></label>
+        <label>Repeats <input type="number" class="repeats" min="1" max="100" step="1"></label>
+        <label class="direction-wrap">Direction
+          <select class="direction">
+            <option value="cw">CW</option>
+            <option value="ccw">CCW</option>
+          </select>
+        </label>
+        <label class="angle-wrap">Angle°
+          <input type="number" class="angle" min="0" max="359" step="1">
+        </label>
+      </div>
+    </li>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

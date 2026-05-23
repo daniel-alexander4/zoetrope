@@ -1,0 +1,398 @@
+(() => {
+  'use strict';
+
+  const TAU = Math.PI * 2;
+
+  const state = {
+    config: null,
+    itemIdx: 0,
+    repeatIdx: 0,
+    t: 0,
+    playing: false,
+    speedMul: 1,
+    lastFrameMs: 0,
+    bounceStart: { x: 0, y: 0 },
+    dirty: false,
+  };
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  function viewport() {
+    return { w: window.innerWidth, h: window.innerHeight };
+  }
+
+  // ---- Patterns ---------------------------------------------------------
+  // Each pattern is a pure function (t, item, vp) -> {x, y}, where
+  // t in [0, 1) represents one full cycle. cx, cy = canvas center.
+  // margin keeps the ball inside the visible area.
+
+  const patterns = {
+    'h-sweep': (t, item, vp) => {
+      const m = item.ballSize / 2;
+      const amp = (vp.w - 2 * m) / 2;
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const pos = -Math.cos(TAU * t);
+      return { x: cx + amp * pos, y: cy };
+    },
+
+    'v-sweep': (t, item, vp) => {
+      const m = item.ballSize / 2;
+      const amp = (vp.h - 2 * m) / 2;
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const pos = -Math.cos(TAU * t);
+      return { x: cx, y: cy + amp * pos };
+    },
+
+    'circle': (t, item, vp) => {
+      const m = item.ballSize / 2;
+      const r = Math.min(vp.w, vp.h) / 2 - m - 8;
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const dir = item.direction === 'ccw' ? -1 : 1;
+      const a = dir * TAU * t;
+      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    },
+
+    'figure-8': (t, item, vp) => {
+      const m = item.ballSize / 2;
+      const ampX = (vp.w - 2 * m) / 2 - 8;
+      const ampY = (vp.h - 2 * m) / 2 - 8;
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const sign = item.direction === 'ccw' ? -1 : 1;
+      return {
+        x: cx + sign * ampX * Math.sin(TAU * 2 * t),
+        y: cy + ampY * Math.sin(TAU * t),
+      };
+    },
+
+    'bounce': (t, item, vp) => {
+      // t spans one "cycle"; in one cycle the ball travels max(w,h) of
+      // unfolded distance. Reflections folded via triangle wave.
+      const m = item.ballSize / 2;
+      const innerW = vp.w - 2 * m;
+      const innerH = vp.h - 2 * m;
+      const speed = Math.max(vp.w, vp.h); // per cycle
+      const angle = ((item.angleDeg ?? 37) * Math.PI) / 180;
+      const dx = Math.cos(angle) * speed * t;
+      const dy = Math.sin(angle) * speed * t;
+      // Cumulative time elapsed within the current item should be
+      // (repeatIdx + t) * 1 (one cycle worth of unfolded travel). The
+      // caller advances repeatIdx, but for bounce we want the path to be
+      // continuous across repeats. So we use a "total t" derived from
+      // state.repeatIdx + t.
+      const totalT = (state.repeatIdx + t);
+      const ux = Math.cos(angle) * speed * totalT;
+      const uy = Math.sin(angle) * speed * totalT;
+      const x = state.bounceStart.x + ux - m;
+      const y = state.bounceStart.y + uy - m;
+      return {
+        x: triangleFold(x, innerW) + m,
+        y: triangleFold(y, innerH) + m,
+      };
+      // dx/dy unused but kept above for clarity of derivation
+    },
+  };
+
+  function triangleFold(v, span) {
+    if (span <= 0) return 0;
+    const period = 2 * span;
+    let m = ((v % period) + period) % period;
+    if (m > span) m = period - m;
+    return m;
+  }
+
+  // ---- Animation --------------------------------------------------------
+
+  function currentItem() {
+    return state.config?.playlist?.[state.itemIdx];
+  }
+
+  function enterItem(idx) {
+    state.itemIdx = idx;
+    state.repeatIdx = 0;
+    state.t = 0;
+    const vp = viewport();
+    state.bounceStart = { x: vp.w / 2, y: vp.h / 2 };
+  }
+
+  function advance(dt) {
+    const item = currentItem();
+    if (!item) return;
+    const dur = Math.max(0.05, item.duration || 1) / state.speedMul;
+    state.t += dt / dur;
+    while (state.t >= 1) {
+      state.t -= 1;
+      state.repeatIdx += 1;
+      if (state.repeatIdx >= (item.repeats || 1)) {
+        const next = (state.itemIdx + 1) % state.config.playlist.length;
+        enterItem(next);
+        return;
+      }
+    }
+  }
+
+  function render() {
+    const vp = viewport();
+    ctx.fillStyle = state.config?.background || '#000';
+    ctx.fillRect(0, 0, vp.w, vp.h);
+
+    const item = currentItem();
+    if (!item) return;
+    const fn = patterns[item.pattern];
+    if (!fn) return;
+    const { x, y } = fn(state.t, item, vp);
+
+    ctx.beginPath();
+    ctx.arc(x, y, (item.ballSize || 20) / 2, 0, TAU);
+    ctx.fillStyle = item.color || '#fff';
+    ctx.fill();
+  }
+
+  function frame(nowMs) {
+    if (!state.lastFrameMs) state.lastFrameMs = nowMs;
+    const dt = (nowMs - state.lastFrameMs) / 1000;
+    state.lastFrameMs = nowMs;
+    if (state.playing) advance(dt);
+    render();
+    updateNowPlaying();
+    updatePlayingHighlight();
+    requestAnimationFrame(frame);
+  }
+
+  // ---- Transport --------------------------------------------------------
+
+  function play() {
+    state.playing = true;
+    setPlayIcon('⏸');
+  }
+  function pause() {
+    state.playing = false;
+    setPlayIcon('▶');
+  }
+  function togglePlay() { state.playing ? pause() : play(); }
+  function stop() { pause(); seekPlaylistStart(); }
+  function seekPlaylistStart() {
+    state.lastFrameMs = 0;
+    enterItem(0);
+  }
+  function seekPatternStart() {
+    state.lastFrameMs = 0;
+    state.t = 0;
+    state.repeatIdx = 0;
+    const vp = viewport();
+    state.bounceStart = { x: vp.w / 2, y: vp.h / 2 };
+  }
+  function nextPattern() {
+    state.lastFrameMs = 0;
+    const len = state.config?.playlist?.length || 1;
+    enterItem((state.itemIdx + 1) % len);
+  }
+
+  function setPlayIcon(icon) {
+    document.getElementById('btn-play').textContent = icon;
+  }
+
+  function updateNowPlaying() {
+    const el = document.getElementById('now-playing');
+    const item = currentItem();
+    if (!item) { el.textContent = ''; return; }
+    const total = state.config.playlist.length;
+    el.textContent = `${state.itemIdx + 1}/${total} · ${item.pattern} · rep ${state.repeatIdx + 1}/${item.repeats}`;
+  }
+
+  function updatePlayingHighlight() {
+    const lis = document.querySelectorAll('#playlist .item');
+    lis.forEach((li, i) => li.classList.toggle('playing', i === state.itemIdx));
+  }
+
+  // ---- Editor -----------------------------------------------------------
+
+  function renderEditor() {
+    const list = document.getElementById('playlist');
+    list.innerHTML = '';
+    const tmpl = document.getElementById('item-template');
+    state.config.playlist.forEach((item, i) => {
+      const node = tmpl.content.firstElementChild.cloneNode(true);
+      node.dataset.pattern = item.pattern;
+      node.querySelector('.pattern').value = item.pattern;
+      node.querySelector('.color').value = item.color || '#ffffff';
+      node.querySelector('.ballSize').value = item.ballSize ?? 24;
+      node.querySelector('.duration').value = item.duration ?? 2;
+      node.querySelector('.repeats').value = item.repeats ?? 1;
+      node.querySelector('.direction').value = item.direction || 'cw';
+      node.querySelector('.angle').value = item.angleDeg ?? 37;
+
+      node.querySelector('.pattern').addEventListener('change', e => {
+        item.pattern = e.target.value;
+        node.dataset.pattern = item.pattern;
+        markDirty();
+      });
+      node.querySelector('.color').addEventListener('input', e => {
+        item.color = e.target.value;
+        markDirty();
+      });
+      node.querySelector('.ballSize').addEventListener('input', e => {
+        item.ballSize = +e.target.value;
+        markDirty();
+      });
+      node.querySelector('.duration').addEventListener('input', e => {
+        item.duration = +e.target.value;
+        markDirty();
+      });
+      node.querySelector('.repeats').addEventListener('input', e => {
+        item.repeats = +e.target.value;
+        markDirty();
+      });
+      node.querySelector('.direction').addEventListener('change', e => {
+        item.direction = e.target.value;
+        markDirty();
+      });
+      node.querySelector('.angle').addEventListener('input', e => {
+        item.angleDeg = +e.target.value;
+        markDirty();
+      });
+
+      // Replace handle with up/down buttons.
+      const handle = node.querySelector('.handle');
+      const upBtn = document.createElement('button');
+      upBtn.textContent = '↑';
+      upBtn.title = 'Move up';
+      upBtn.className = 'move';
+      upBtn.addEventListener('click', () => moveItem(i, -1));
+      const downBtn = document.createElement('button');
+      downBtn.textContent = '↓';
+      downBtn.title = 'Move down';
+      downBtn.className = 'move';
+      downBtn.addEventListener('click', () => moveItem(i, +1));
+      handle.replaceWith(upBtn, downBtn);
+
+      node.querySelector('.del').addEventListener('click', () => deleteItem(i));
+
+      list.appendChild(node);
+    });
+    updatePlayingHighlight();
+  }
+
+  function moveItem(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= state.config.playlist.length) return;
+    const arr = state.config.playlist;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    if (state.itemIdx === i) state.itemIdx = j;
+    else if (state.itemIdx === j) state.itemIdx = i;
+    markDirty();
+    renderEditor();
+  }
+
+  function deleteItem(i) {
+    if (state.config.playlist.length <= 1) return;
+    state.config.playlist.splice(i, 1);
+    if (state.itemIdx >= state.config.playlist.length) {
+      enterItem(0);
+    } else if (state.itemIdx > i) {
+      state.itemIdx -= 1;
+    } else if (state.itemIdx === i) {
+      enterItem(state.itemIdx % state.config.playlist.length);
+    }
+    markDirty();
+    renderEditor();
+  }
+
+  function addItem() {
+    state.config.playlist.push({
+      pattern: 'h-sweep',
+      color: '#cba6f7',
+      ballSize: 24,
+      duration: 2,
+      repeats: 3,
+      direction: 'cw',
+      angleDeg: 37,
+    });
+    markDirty();
+    renderEditor();
+  }
+
+  function markDirty() {
+    state.dirty = true;
+    document.getElementById('save-status').textContent = '● unsaved';
+  }
+
+  function markClean() {
+    state.dirty = false;
+    document.getElementById('save-status').textContent = 'saved';
+    setTimeout(() => {
+      if (!state.dirty) document.getElementById('save-status').textContent = '';
+    }, 1500);
+  }
+
+  async function loadConfig() {
+    const r = await fetch('/config', { cache: 'no-store' });
+    if (!r.ok) throw new Error('load config: ' + r.status);
+    state.config = await r.json();
+    enterItem(0);
+    document.getElementById('bg-color').value = state.config.background || '#000000';
+    renderEditor();
+  }
+
+  async function saveConfig() {
+    const r = await fetch('/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.config),
+    });
+    if (r.ok) markClean();
+    else document.getElementById('save-status').textContent = 'save failed';
+  }
+
+  // ---- Wiring -----------------------------------------------------------
+
+  document.getElementById('btn-pl-start').addEventListener('click', seekPlaylistStart);
+  document.getElementById('btn-pat-start').addEventListener('click', seekPatternStart);
+  document.getElementById('btn-play').addEventListener('click', togglePlay);
+  document.getElementById('btn-stop').addEventListener('click', stop);
+  document.getElementById('btn-next').addEventListener('click', nextPattern);
+  document.getElementById('speed').addEventListener('change', e => {
+    state.speedMul = +e.target.value;
+  });
+  document.getElementById('btn-toggle-editor').addEventListener('click', () => {
+    document.getElementById('editor').classList.toggle('hidden');
+  });
+  document.getElementById('btn-add').addEventListener('click', addItem);
+  document.getElementById('btn-save').addEventListener('click', saveConfig);
+  document.getElementById('btn-revert').addEventListener('click', () => loadConfig().then(markClean));
+  document.getElementById('bg-color').addEventListener('input', e => {
+    state.config.background = e.target.value;
+    markDirty();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    if (e.code === 'ArrowLeft') seekPatternStart();
+    if (e.code === 'ArrowRight') nextPattern();
+    if (e.code === 'Home') seekPlaylistStart();
+  });
+
+  loadConfig().then(() => {
+    play();
+    requestAnimationFrame(frame);
+  }).catch(err => {
+    console.error(err);
+    document.body.innerText = 'Failed to load config: ' + err.message;
+  });
+})();
