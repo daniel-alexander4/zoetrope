@@ -28,7 +28,8 @@ func main() {
 		fatal("init config: %v", err)
 	}
 
-	mux := newRouter(store)
+	hb := &heartbeat{}
+	mux := newRouter(store, hb)
 
 	// Prefer a stable port so a stale browser tab still points at the
 	// live server after a restart. Fall back to a random free port if
@@ -66,6 +67,19 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
+	const heartbeatTimeout = 30 * time.Second
+	watchdogQuit := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if hb.Stale(heartbeatTimeout) {
+				close(watchdogQuit)
+				return
+			}
+		}
+	}()
+
 	select {
 	case err := <-serverErr:
 		if err != nil {
@@ -73,10 +87,17 @@ func main() {
 		}
 	case sig := <-sigCh:
 		log.Printf("received %s, shutting down", sig)
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
+		shutdown(srv)
+	case <-watchdogQuit:
+		log.Printf("no heartbeat for %v, shutting down", heartbeatTimeout)
+		shutdown(srv)
 	}
+}
+
+func shutdown(srv *http.Server) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(ctx)
 }
 
 func fatal(format string, args ...any) {

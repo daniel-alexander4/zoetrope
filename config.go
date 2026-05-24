@@ -29,8 +29,8 @@ type PlaylistItem struct {
 func defaultConfig() Config {
 	return Config{
 		Background:      "#0e0e16",
-		BallSize:        24,
-		Speed:           5,
+		BallSize:        80,
+		Speed:           2,
 		SpeedMultiplier: 1.0,
 		Playlist: []PlaylistItem{
 			{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},

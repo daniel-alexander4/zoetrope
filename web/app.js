@@ -194,7 +194,7 @@
     if (!item) return;
     // Speed is on a 0-10 user scale; 10 = 1 cycle/sec.
     // Nullish coalescing (??) — `|| 5` would treat speed=0 as the default.
-    const cps = (Math.max(0, state.config.speed ?? 5) / 10) * state.speedMul;
+    const cps = (Math.max(0, state.config.speed ?? 2) / 10) * state.speedMul;
     state.t += dt * cps;
     while (state.t >= 1) {
       state.t -= 1;
@@ -219,7 +219,7 @@
     const { x, y } = fn(state.t, item, vp);
 
     ctx.beginPath();
-    ctx.arc(x, y, (state.config.ballSize || 24) / 2, 0, TAU);
+    ctx.arc(x, y, (state.config.ballSize || 80) / 2, 0, TAU);
     ctx.fillStyle = item.color || '#fff';
     ctx.fill();
   }
@@ -445,8 +445,8 @@
     const r = await fetch('/config', { cache: 'no-store' });
     if (!r.ok) throw new Error('load config: ' + r.status);
     state.config = await r.json();
-    if (!state.config.ballSize) state.config.ballSize = 24;
-    if (state.config.speed == null) state.config.speed = 5;
+    if (!state.config.ballSize) state.config.ballSize = 80;
+    if (state.config.speed == null) state.config.speed = 2;
     enterItem(0);
     document.getElementById('bg-color').value = state.config.background || '#000000';
     document.getElementById('ball-size').value = state.config.ballSize;
@@ -543,7 +543,19 @@
     if (e.code === 'Home') seekPlaylistStart();
   });
 
+  // Heartbeat: tell the server we're still here. If the tab closes (or
+  // browser crashes, or network drops) heartbeats stop and the server
+  // shuts itself down after a few missed beats.
+  function heartbeat() {
+    fetch('/heartbeat', { method: 'POST' }).catch(() => {});
+  }
+  setInterval(heartbeat, 5000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) heartbeat();
+  });
+
   loadConfig().then(() => {
+    heartbeat();
     play();
     requestAnimationFrame(frame);
   }).catch(err => {

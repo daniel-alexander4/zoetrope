@@ -5,12 +5,33 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"sync/atomic"
+	"time"
 )
 
 //go:embed web/*
 var webFS embed.FS
 
-func newRouter(store *configStore) http.Handler {
+// heartbeat tracks the most recent client ping. Stale() returns false
+// until the first ping arrives, so the server doesn't shut itself down
+// before the browser ever connects.
+type heartbeat struct {
+	lastMs atomic.Int64
+}
+
+func (h *heartbeat) Touch() {
+	h.lastMs.Store(time.Now().UnixMilli())
+}
+
+func (h *heartbeat) Stale(d time.Duration) bool {
+	last := h.lastMs.Load()
+	if last == 0 {
+		return false
+	}
+	return time.Since(time.UnixMilli(last)) > d
+}
+
+func newRouter(store *configStore, hb *heartbeat) http.Handler {
 	mux := http.NewServeMux()
 
 	static, err := fs.Sub(webFS, "web")
@@ -25,6 +46,11 @@ func newRouter(store *configStore) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(store.Get())
+	})
+
+	mux.HandleFunc("POST /heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		hb.Touch()
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	mux.HandleFunc("PUT /config", func(w http.ResponseWriter, r *http.Request) {
