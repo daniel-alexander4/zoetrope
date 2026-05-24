@@ -13,7 +13,7 @@ import (
 type Config struct {
 	Background      string         `json:"background"`
 	BallSize        float64        `json:"ballSize"`
-	Speed           float64        `json:"speed"` // cycles per second — higher = faster
+	Speed           float64        `json:"speed"` // 0-10 scale; 10 = 1 cycle/sec, 0 = paused
 	SpeedMultiplier float64        `json:"speedMultiplier"`
 	Playlist        []PlaylistItem `json:"playlist"`
 }
@@ -30,7 +30,7 @@ func defaultConfig() Config {
 	return Config{
 		Background:      "#0e0e16",
 		BallSize:        24,
-		Speed:           0.5,
+		Speed:           5,
 		SpeedMultiplier: 1.0,
 		Playlist: []PlaylistItem{
 			{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},

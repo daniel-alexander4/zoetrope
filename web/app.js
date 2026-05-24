@@ -192,8 +192,9 @@
   function advance(dt) {
     const item = currentItem();
     if (!item) return;
-    const sp = Math.max(0.01, state.config.speed || 0.5) * state.speedMul;
-    state.t += dt * sp;
+    // Speed is on a 0-10 user scale; 10 = 1 cycle/sec.
+    const cps = (Math.max(0, state.config.speed || 5) / 10) * state.speedMul;
+    state.t += dt * cps;
     while (state.t >= 1) {
       state.t -= 1;
       state.repeatIdx += 1;
@@ -435,7 +436,7 @@
     if (!r.ok) throw new Error('load config: ' + r.status);
     state.config = await r.json();
     if (!state.config.ballSize) state.config.ballSize = 24;
-    if (!state.config.speed) state.config.speed = 0.5;
+    if (state.config.speed == null) state.config.speed = 5;
     enterItem(0);
     document.getElementById('bg-color').value = state.config.background || '#000000';
     document.getElementById('ball-size').value = state.config.ballSize;
