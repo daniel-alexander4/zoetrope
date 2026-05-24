@@ -263,6 +263,11 @@
     const len = state.config?.playlist?.length || 1;
     enterItem((state.itemIdx + 1) % len);
   }
+  function jumpToItem(i) {
+    if (i < 0 || i >= state.config.playlist.length) return;
+    state.lastFrameMs = 0;
+    enterItem(i);
+  }
 
   function setPlayIcon(icon) {
     document.getElementById('btn-play').textContent = icon;
@@ -323,6 +328,10 @@
         if (e.target.closest('.del')) return;  // don't drag when clicking ×
         node.draggable = true;
         document.addEventListener('mouseup', () => { node.draggable = false; }, { once: true });
+      });
+      titleBar.addEventListener('click', e => {
+        if (e.target.closest('.del')) return;  // delete handles its own click
+        jumpToItem(+node.dataset.index);
       });
 
       node.addEventListener('dragstart', e => {
