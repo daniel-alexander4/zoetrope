@@ -470,7 +470,8 @@
       hideHud();
     } catch (err) {
       console.error('save failed:', err);
-      document.getElementById('save-status').textContent = 'save failed: ' + err.message;
+      document.getElementById('save-status').textContent =
+        'save failed: ' + err.message + ' — server moved? try refreshing the page';
     }
   }
 

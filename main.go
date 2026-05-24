@@ -30,9 +30,17 @@ func main() {
 
 	mux := newRouter(store)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	// Prefer a stable port so a stale browser tab still points at the
+	// live server after a restart. Fall back to a random free port if
+	// the preferred one is taken (e.g., another Zoetrope is running).
+	const preferredPort = "38129"
+	ln, err := net.Listen("tcp", "127.0.0.1:"+preferredPort)
 	if err != nil {
-		fatal("listen: %v", err)
+		log.Printf("port %s unavailable (%v); using random free port", preferredPort, err)
+		ln, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			fatal("listen: %v", err)
+		}
 	}
 	url := fmt.Sprintf("http://%s/", ln.Addr().String())
 	log.Printf("listening on %s", url)
