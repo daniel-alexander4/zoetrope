@@ -184,30 +184,21 @@
     },
 
     'bounce': (t, item, vp) => {
-      // t spans one "cycle"; in one cycle the ball travels max(w,h) of
-      // unfolded distance. Reflections folded via triangle wave.
+      // The ball travels in a straight line at constant speed; reflections
+      // off the inner-rectangle walls are folded via a triangle wave so
+      // the trajectory is continuous across repeats.
       const m = state.config.ballSize / 2;
       const innerW = vp.w - 2 * m;
       const innerH = vp.h - 2 * m;
-      const speed = Math.max(vp.w, vp.h); // per cycle
+      const speed = Math.max(vp.w, vp.h); // unfolded distance per cycle
       const angle = ((item.angleDeg ?? 37) * Math.PI) / 180;
-      const dx = Math.cos(angle) * speed * t;
-      const dy = Math.sin(angle) * speed * t;
-      // Cumulative time elapsed within the current item should be
-      // (repeatIdx + t) * 1 (one cycle worth of unfolded travel). The
-      // caller advances repeatIdx, but for bounce we want the path to be
-      // continuous across repeats. So we use a "total t" derived from
-      // state.repeatIdx + t.
-      const totalT = (state.repeatIdx + t);
+      const totalT = state.repeatIdx + t;
       const ux = Math.cos(angle) * speed * totalT;
       const uy = Math.sin(angle) * speed * totalT;
-      const x = state.bounceStart.x + ux - m;
-      const y = state.bounceStart.y + uy - m;
       return {
-        x: triangleFold(x, innerW) + m,
-        y: triangleFold(y, innerH) + m,
+        x: triangleFold(state.bounceStart.x + ux - m, innerW) + m,
+        y: triangleFold(state.bounceStart.y + uy - m, innerH) + m,
       };
-      // dx/dy unused but kept above for clarity of derivation
     },
   };
 
@@ -276,6 +267,7 @@
     ctx.fill();
   }
 
+  let lastHighlightIdx = -1;
   function frame(nowMs) {
     if (!state.lastFrameMs) state.lastFrameMs = nowMs;
     const dt = (nowMs - state.lastFrameMs) / 1000;
@@ -283,7 +275,10 @@
     if (state.playing) advance(dt);
     render();
     updateNowPlaying();
-    updatePlayingHighlight();
+    if (state.itemIdx !== lastHighlightIdx) {
+      updatePlayingHighlight();
+      lastHighlightIdx = state.itemIdx;
+    }
     requestAnimationFrame(frame);
   }
 
@@ -497,10 +492,7 @@
     const r = await fetch('/config', { cache: 'no-store' });
     if (!r.ok) throw new Error('load config: ' + r.status);
     state.config = await r.json();
-    if (!state.config.ballSize) state.config.ballSize = 80;
-    if (state.config.speed == null) state.config.speed = 2;
     enterItem(0);
-    if (state.config.lingerSec == null) state.config.lingerSec = 0;
     document.getElementById('bg-color').value = state.config.background || '#000000';
     document.getElementById('ball-size').value = state.config.ballSize;
     document.getElementById('speed-input').value = state.config.speed;
@@ -512,7 +504,10 @@
     try {
       const r = await fetch('/config', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Zoetrope': '1',
+        },
         body: JSON.stringify(state.config),
       });
       if (!r.ok) {

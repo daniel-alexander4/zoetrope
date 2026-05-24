@@ -1,11 +1,12 @@
 # Zoetrope
 
 A tiny desktop app that opens a browser window and plays a configurable
-playlist of moving-ball patterns: horizontal/vertical sweep, bounce,
-circle (CW/CCW), figure-8 (CW/CCW). Background color, ball color, ball
-size, per-pattern duration, repeat count, direction, and a global speed
-multiplier are all editable in the UI and persist to a JSON file in the
-OS user config directory.
+playlist of moving-ball patterns: horizontal / vertical / diagonal sweep,
+bounce, circle (CW/CCW), infinity ∞ (horizontal and vertical, CW/CCW).
+Background color, ball color, global ball size, global speed, edge-linger
+duration (a vision-training pulse at the extreme of each linear sweep),
+per-item repeat count, and direction are all editable in the UI and
+persist to a JSON file in the OS user config directory.
 
 ## Run
 
@@ -76,8 +77,7 @@ so the on-screen motion pace stays consistent regardless of dwell.
 
 ## Build & versioning
 
-Requires Go 1.25+, `curl`, `zip`. AppImage assembly downloads
-`appimagetool` on first run.
+Requires Go 1.25+, `zip`, and (for the Debian package) `dpkg-deb`.
 
 The version string lives in the top-level `VERSION` file (e.g. `0.1.0`,
 no leading `v`). `build/build.sh` reads it and bakes it into every
@@ -108,5 +108,5 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 ├── server.go       HTTP routes, embedded asset serving
 ├── browser.go      cross-platform default-browser open
 ├── web/            embedded UI (HTML/CSS/JS)
-└── build/          cross-compile script, icon, Info.plist, AppImage glue
+└── build/          cross-compile script, Info.plist, .desktop entry, lipo helper
 ```

@@ -58,7 +58,7 @@ func run(outPath, amd64Path, arm64Path string) error {
 	}
 
 	const align = 14 // 2^14 = 16 KiB, the macOS page size on arm64
-	headerSize := 8 + 2*48 // fat_header + 2 * fat_arch_64
+	headerSize := 8 + 2*32 // fat_header (8) + 2 × fat_arch_64 (32 each)
 
 	off1 := alignUp(uint64(headerSize), 1<<align)
 	off2 := alignUp(off1+uint64(len(amd64Data)), 1<<align)

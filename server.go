@@ -3,7 +3,9 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -11,6 +13,14 @@ import (
 
 //go:embed web/*
 var webFS embed.FS
+
+// csrfHeader is required on mutating endpoints. Browsers won't send a
+// custom header from a cross-origin <form> submit without a preflight,
+// and the server doesn't honor preflights from foreign origins — so the
+// presence of this header is sufficient evidence the request came from
+// our own JS, not from a page the user happened to visit while the
+// server was running.
+const csrfHeader = "X-Zoetrope"
 
 // heartbeat tracks the most recent client ping. Stale() returns false
 // until the first ping arrives, so the server doesn't shut itself down
@@ -31,12 +41,12 @@ func (h *heartbeat) Stale(d time.Duration) bool {
 	return time.Since(time.UnixMilli(last)) > d
 }
 
-func newRouter(store *configStore, hb *heartbeat) http.Handler {
+func newRouter(store *configStore, hb *heartbeat) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	static, err := fs.Sub(webFS, "web")
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("sub-FS for web/: %w", err)
 	}
 	// Disable caching so a rebuilt binary always serves fresh JS/CSS to
 	// the open browser tab.
@@ -45,7 +55,9 @@ func newRouter(store *configStore, hb *heartbeat) http.Handler {
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(store.Get())
+		if err := json.NewEncoder(w).Encode(store.Get()); err != nil {
+			log.Printf("encode /config: %v", err)
+		}
 	})
 
 	mux.HandleFunc("POST /heartbeat", func(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +72,10 @@ func newRouter(store *configStore, hb *heartbeat) http.Handler {
 	})
 
 	mux.HandleFunc("PUT /config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(csrfHeader) == "" {
+			http.Error(w, "missing "+csrfHeader+" header", http.StatusForbidden)
+			return
+		}
 		var cfg Config
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
@@ -72,7 +88,7 @@ func newRouter(store *configStore, hb *heartbeat) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	return mux
+	return mux, nil
 }
 
 func noCache(h http.Handler) http.Handler {

@@ -39,7 +39,6 @@ html, body {
 
 #hud.idle {
   opacity: 0;
-  pointer-events: none;
 }
 
 #transport {

@@ -11,12 +11,11 @@ import (
 )
 
 type Config struct {
-	Background      string         `json:"background"`
-	BallSize        float64        `json:"ballSize"`
-	Speed           float64        `json:"speed"` // 0-10 scale; 10 = 1 cycle/sec, 0 = paused
-	SpeedMultiplier float64        `json:"speedMultiplier"`
-	LingerSec       float64        `json:"lingerSec"` // dwell at each extreme of a linear sweep; 0 = off
-	Playlist        []PlaylistItem `json:"playlist"`
+	Background string         `json:"background"`
+	BallSize   float64        `json:"ballSize"`
+	Speed      float64        `json:"speed"`     // 0-10 scale; 10 = 1 cycle/sec, 0 = paused
+	LingerSec  float64        `json:"lingerSec"` // dwell at each extreme of a linear sweep; 0 = off
+	Playlist   []PlaylistItem `json:"playlist"`
 }
 
 type PlaylistItem struct {
@@ -29,10 +28,9 @@ type PlaylistItem struct {
 
 func defaultConfig() Config {
 	return Config{
-		Background:      "#0e0e16",
-		BallSize:        80,
-		Speed:           2,
-		SpeedMultiplier: 1.0,
+		Background: "#0e0e16",
+		BallSize:   80,
+		Speed:      2,
 		Playlist: []PlaylistItem{
 			{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},
 			{Pattern: "v-sweep", Color: "#f9e2af", Repeats: 3},

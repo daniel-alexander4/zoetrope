@@ -14,7 +14,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="${1:-${VERSION:-$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo 0.0.0)}}"
+VERSION_FROM_FILE=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || true)
+VERSION="${1:-${VERSION:-${VERSION_FROM_FILE:-0.0.0}}}"
 DIST="dist"
 APP="zoetrope"
 DISPLAY_NAME="Zoetrope"
