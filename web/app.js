@@ -488,6 +488,23 @@
   document.getElementById('btn-toggle-editor').addEventListener('click', () => {
     document.getElementById('editor').classList.toggle('hidden');
   });
+
+  // Auto-close the editor 1s after the mouse leaves it, but only if
+  // there are no unsaved changes — never throw away pending edits.
+  {
+    const editor = document.getElementById('editor');
+    let closeTimer = null;
+    editor.addEventListener('mouseleave', () => {
+      clearTimeout(closeTimer);
+      if (state.dirty) return;
+      closeTimer = setTimeout(() => {
+        if (!state.dirty) editor.classList.add('hidden');
+      }, 1000);
+    });
+    editor.addEventListener('mouseenter', () => {
+      clearTimeout(closeTimer);
+    });
+  }
   populateAddPattern();
   document.getElementById('add-pattern').addEventListener('change', e => {
     if (!e.target.value) return;
