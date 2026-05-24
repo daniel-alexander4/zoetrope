@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zoetrope — Sessions</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="page-manage nmode-standalone">
+  <header id="manage-topbar">
+    <div class="brand">
+      <img src="icon.png" class="brand-mark" alt="">
+      <div class="brand-name">Zoetrope</div>
+      <span class="page-label">Sessions</span>
+    </div>
+    <nav class="mode-pills" aria-label="Mode">
+      <button class="mpill" data-mode="standalone">Standalone</button>
+      <button class="mpill" data-mode="client">Client</button>
+      <button class="mpill" data-mode="hosting">Hosting</button>
+    </nav>
+    <a class="back-link" href="/">← Ball view</a>
+  </header>
+
+  <main id="manage-body">
+    <section id="identity-panel" hidden>
+      <h3>My identity</h3>
+      <div class="identity-row">
+        <span class="identity-label">Fingerprint</span>
+        <code id="practitioner-fp">—</code>
+        <button class="copy-btn" data-copy="practitioner-fp" title="Copy fingerprint">Copy</button>
+      </div>
+      <div class="identity-row">
+        <span class="identity-label">Public endpoint</span>
+        <code id="practitioner-ep">—</code>
+        <button class="copy-btn" data-copy="practitioner-ep" title="Copy address">Copy</button>
+      </div>
+    </section>
+
+    <section id="sessions">
+      <header>
+        <h3>Sessions</h3>
+        <button id="btn-new-session" title="Mint another connection string for a new client">+ Generate connection string</button>
+      </header>
+      <ol id="sessions-list"></ol>
+      <div id="sessions-empty" class="empty-hint">
+        Not hosting yet. Click <strong>Hosting</strong> above to detect your public IP and mint a connection string.
+      </div>
+    </section>
+  </main>
+
+  <template id="session-template">
+    <li class="session">
+      <div class="session-header">
+        <span class="session-label"></span>
+        <span class="session-status" data-status="waiting">waiting</span>
+        <button class="session-remove" title="Close and remove this session">×</button>
+      </div>
+      <div class="session-url-row">
+        <textarea class="session-url" readonly></textarea>
+        <button class="session-copy">Copy</button>
+      </div>
+      <div class="session-controls">
+        <button class="ctl-play" data-verb="play">▶ Play</button>
+        <button class="ctl-pause" data-verb="pause">⏸ Pause</button>
+        <button class="ctl-back" data-verb="back" title="Start of current sequence">◀</button>
+        <button class="ctl-advance" data-verb="advance" title="Next sequence">▶▶</button>
+        <button class="ctl-stop" data-verb="stop" title="Pause and reset to first sequence">Reset</button>
+        <select class="session-picker" title="Jump to a specific sequence"></select>
+      </div>
+      <div class="session-detail"></div>
+    </li>
+  </template>
+
+  <!-- Inline confirm overlay (Cancel / Switch). Hidden by default. -->
+  <div id="confirm-overlay" hidden>
+    <div class="confirm-card">
+      <div class="confirm-message"></div>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="ghost">Cancel</button>
+        <button id="confirm-ok">Switch</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="manage.js"></script>
+</body>
+</html>

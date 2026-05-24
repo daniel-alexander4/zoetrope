@@ -11,6 +11,11 @@
   <canvas id="stage"></canvas>
 
   <div id="hud">
+    <nav class="mode-pills" aria-label="Mode">
+      <button class="mpill" data-mode="standalone">Standalone</button>
+      <button class="mpill" data-mode="client">Client</button>
+      <button class="mpill" data-mode="hosting">Hosting</button>
+    </nav>
     <div id="transport">
       <div class="tabs">
         <button id="tab-balls" class="tab active" title="Ball patterns">Balls</button>
@@ -94,12 +99,6 @@
       </label>
     </div>
     <ol id="playlist" class="balls-only"></ol>
-    <div class="network-block">
-      <h3>Network</h3>
-      <button id="btn-host" title="Auto-detect your public IP, start hosting, and mint a fresh session URL">Generate connection string</button>
-      <button id="btn-join" title="Join a session a practitioner has shared">Join a session</button>
-      <div id="host-status" class="host-status"></div>
-    </div>
     <footer>
       <button id="btn-save">Save</button>
       <button id="btn-revert">Revert</button>
@@ -130,59 +129,21 @@
     </li>
   </template>
 
-  <!-- Manager view: replaces the animation surface when hosting a session. -->
-  <div id="manager-view">
-    <header>
-      <h2>Hosting</h2>
-      <button id="btn-stop-hosting" title="Tear down listener and return to standalone">Stop hosting</button>
-    </header>
-    <section id="identity-panel">
-      <h3>My identity</h3>
-      <div class="identity-row">
-        <span class="identity-label">Fingerprint</span>
-        <code id="practitioner-fp">—</code>
-      </div>
-      <div class="identity-row">
-        <span class="identity-label">Public endpoint</span>
-        <code id="practitioner-ep">—</code>
-      </div>
-    </section>
-    <section id="sessions">
-      <header>
-        <h3>Sessions</h3>
-        <button id="btn-new-session" title="Generate another connection string for a new client">+ Generate connection string</button>
-      </header>
-      <ol id="sessions-list"></ol>
-    </section>
-  </div>
-
-  <template id="session-template">
-    <li class="session">
-      <div class="session-header">
-        <span class="session-label"></span>
-        <span class="session-status" data-status="waiting">waiting</span>
-        <button class="session-remove" title="Close and remove this session">×</button>
-      </div>
-      <div class="session-url-row">
-        <textarea class="session-url" readonly></textarea>
-        <button class="session-copy">Copy</button>
-      </div>
-      <div class="session-controls">
-        <button class="ctl-play" data-verb="play">▶ Play</button>
-        <button class="ctl-pause" data-verb="pause">⏸ Pause</button>
-        <button class="ctl-back" data-verb="back" title="Start of current sequence">◀</button>
-        <button class="ctl-advance" data-verb="advance" title="Next sequence">▶▶</button>
-        <button class="ctl-stop" data-verb="stop">■ Stop</button>
-        <select class="session-picker" title="Set sequence"></select>
-      </div>
-      <div class="session-detail"></div>
-    </li>
-  </template>
-
   <!-- Client-mode overlay: pill + leave button when in client mode. -->
   <div id="client-status">
     <span id="client-pill" data-state="connecting">Connecting…</span>
     <button id="btn-leave" title="End the session and return to standalone">Leave session</button>
+  </div>
+
+  <!-- Inline confirm overlay (Cancel / Switch). Hidden by default. -->
+  <div id="confirm-overlay" hidden>
+    <div class="confirm-card">
+      <div class="confirm-message"></div>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" class="ghost">Cancel</button>
+        <button id="confirm-ok">Switch</button>
+      </div>
+    </div>
   </div>
 
   <!-- Join dialog -->

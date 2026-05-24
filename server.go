@@ -52,6 +52,15 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 	// the open browser tab.
 	mux.Handle("/", noCache(http.FileServer(http.FS(static))))
 
+	// /manage is the hosting console — a second top-level page that
+	// shares the same JS/CSS assets but has its own HTML root. Served
+	// explicitly because http.FileServer won't resolve /manage to
+	// manage.html on its own.
+	mux.HandleFunc("GET /manage", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		http.ServeFileFS(w, r, static, "manage.html")
+	})
+
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

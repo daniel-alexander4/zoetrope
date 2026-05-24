@@ -1070,11 +1070,15 @@
     .then(v => { document.getElementById('version').textContent = v.trim(); })
     .catch(() => {});
 
-  // ---- Network mode (standalone / manager / client) -------------------
+  // ---- Network mode (standalone / client) -----------------------------
+  //
+  // The ball page handles standalone and client modes. Hosting lives on
+  // /manage; the Hosting pill here is purely a nav affordance.
 
   state.nmode = 'standalone';
-  state.sessions = new Map(); // fp → { node, snap }
   let clientStatePushTimer = null;
+
+  const PILL_TO_MODE = { standalone: 'standalone', client: 'client', hosting: 'manager' };
 
   async function csrfFetch(path, options = {}) {
     const headers = { ...(options.headers || {}), 'X-Zoetrope': '1' };
@@ -1086,19 +1090,15 @@
     document.body.classList.remove('nmode-standalone', 'nmode-manager', 'nmode-client');
     document.body.classList.add('nmode-' + state.nmode);
 
-    if (state.nmode === 'manager') {
-      document.getElementById('practitioner-fp').textContent = snap.practitioner_fp || '—';
-      document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
-      renderSessions(snap.sessions || []);
-    } else if (state.nmode === 'client') {
+    document.querySelectorAll('.mpill').forEach(p => {
+      p.classList.toggle('active', PILL_TO_MODE[p.dataset.mode] === state.nmode);
+    });
+
+    if (state.nmode === 'client') {
       setClientPill('connected');
       pushClientHello();
       pushClientSequences();
       pushClientState();
-    } else {
-      state.sessions.clear();
-      const list = document.getElementById('sessions-list');
-      if (list) list.innerHTML = '';
     }
   }
 
@@ -1112,117 +1112,6 @@
       disconnected: 'Disconnected',
       error: 'Connection error',
     }[status]) || status;
-  }
-
-  function renderSessions(sessions) {
-    const list = document.getElementById('sessions-list');
-    list.innerHTML = '';
-    state.sessions.clear();
-    for (const sess of sessions) {
-      addSessionToList(sess);
-    }
-  }
-
-  function addSessionToList(snap, url) {
-    // The quickstart POST response and the SSE session-created event can
-    // arrive in either order. If the entry already exists, just fill in
-    // the URL if we have one — never recreate.
-    const existing = state.sessions.get(snap.fingerprint);
-    if (existing) {
-      if (url) existing.node.querySelector('.session-url').value = url;
-      return;
-    }
-    const list = document.getElementById('sessions-list');
-    const tmpl = document.getElementById('session-template');
-    const node = tmpl.content.firstElementChild.cloneNode(true);
-    node.dataset.fp = snap.fingerprint;
-    node.querySelector('.session-label').textContent = snap.label || snap.fingerprint.slice(0, 12);
-    const statusEl = node.querySelector('.session-status');
-    statusEl.textContent = snap.connected ? 'connected' : 'waiting';
-    statusEl.dataset.status = snap.connected ? 'connected' : 'waiting';
-    if (url) node.querySelector('.session-url').value = url;
-    wireSessionNode(node, snap.fingerprint);
-    list.appendChild(node);
-    state.sessions.set(snap.fingerprint, { node, snap });
-  }
-
-  function removeSessionFromList(fp) {
-    const entry = state.sessions.get(fp);
-    if (!entry) return;
-    entry.node.remove();
-    state.sessions.delete(fp);
-  }
-
-  function updateSessionStatus(fp, status) {
-    const entry = state.sessions.get(fp);
-    if (!entry) return;
-    const el = entry.node.querySelector('.session-status');
-    el.textContent = status;
-    el.dataset.status = status;
-  }
-
-  function setSessionLabel(fp, label) {
-    const entry = state.sessions.get(fp);
-    if (!entry || !label) return;
-    entry.node.querySelector('.session-label').textContent = label;
-  }
-
-  function populateSessionPicker(fp, payload) {
-    const entry = state.sessions.get(fp);
-    if (!entry || !payload?.sequences) return;
-    const sel = entry.node.querySelector('.session-picker');
-    sel.innerHTML = '<option value="">Set sequence…</option>';
-    for (const seq of payload.sequences) {
-      const opt = document.createElement('option');
-      opt.value = String(seq.index);
-      opt.textContent = `${seq.index + 1}. ${seq.label}`;
-      sel.appendChild(opt);
-    }
-  }
-
-  function updateSessionDetail(fp, payload) {
-    const entry = state.sessions.get(fp);
-    if (!entry || !payload) return;
-    const playing = payload.playing ? '▶' : '⏸';
-    const idx = payload.item_idx ?? 0;
-    const rep = payload.repeat_idx ?? 0;
-    const pat = payload.pattern || '?';
-    entry.node.querySelector('.session-detail').textContent =
-      `${playing} item ${idx + 1}, rep ${rep + 1}, pattern ${pat}`;
-  }
-
-  function wireSessionNode(node, fp) {
-    node.querySelector('.session-remove').addEventListener('click', () => {
-      csrfFetch('/api/sessions/' + fp, { method: 'DELETE' }).catch(()=>{});
-    });
-    node.querySelector('.session-copy').addEventListener('click', () => {
-      const ta = node.querySelector('.session-url');
-      if (!ta.value) return;
-      ta.select();
-      navigator.clipboard.writeText(ta.value).catch(()=>{});
-    });
-    node.querySelectorAll('.session-controls button[data-verb]').forEach(btn => {
-      btn.addEventListener('click', () => sendSessionVerb(fp, { type: btn.dataset.verb }));
-    });
-    node.querySelector('.session-picker').addEventListener('change', e => {
-      if (e.target.value === '') return;
-      const idx = parseInt(e.target.value, 10);
-      if (Number.isInteger(idx)) sendSessionVerb(fp, { type: 'set-sequence', index: idx });
-      e.target.value = '';
-    });
-  }
-
-  async function sendSessionVerb(fp, verb) {
-    try {
-      const r = await csrfFetch('/api/sessions/' + fp + '/verb', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(verb),
-      });
-      if (!r.ok) console.warn('verb', r.status, await r.text());
-    } catch (err) {
-      console.error('sendSessionVerb:', err);
-    }
   }
 
   // ---- Client-side pushes ---------------------------------------------
@@ -1271,12 +1160,6 @@
 
   // ---- Mode actions ---------------------------------------------------
 
-  async function networkQuickstart() {
-    const r = await csrfFetch('/api/sessions/quickstart', { method: 'POST' });
-    if (!r.ok) throw new Error((await r.text()).trim() || 'quickstart failed');
-    return r.json();
-  }
-
   async function networkJoin(url, label) {
     const r = await csrfFetch('/api/mode/join', {
       method: 'POST',
@@ -1290,46 +1173,14 @@
     await csrfFetch('/api/mode/standalone', { method: 'POST' }).catch(()=>{});
   }
 
-  // ---- Quickstart: one-button "Generate connection string" -----------
-  //
-  // Bound to both the standalone-mode "Generate connection string" button
-  // and the manager-mode "+ Generate connection string" button. In
-  // standalone the server detects the public IP and enters manager mode
-  // before minting; in manager mode it just mints another session.
-
-  async function generateConnectionString(btnEl) {
-    const status = document.getElementById('host-status');
-    const originalText = btnEl.textContent;
-    btnEl.disabled = true;
-    btnEl.textContent = 'Detecting public IP…';
-    if (status) status.textContent = '';
-    try {
-      const { url, session } = await networkQuickstart();
-      addSessionToList(session, url);
-    } catch (err) {
-      const msg = err.message || String(err);
-      if (status) status.textContent = msg;
-      else alert('Generate connection string failed: ' + msg);
-    } finally {
-      btnEl.disabled = false;
-      btnEl.textContent = originalText;
-    }
-  }
-  document.getElementById('btn-host').addEventListener('click', e => {
-    generateConnectionString(e.currentTarget);
-  });
-  document.getElementById('btn-new-session').addEventListener('click', e => {
-    generateConnectionString(e.currentTarget);
-  });
-
   // ---- Join dialog ----------------------------------------------------
 
   const joinDialog = document.getElementById('join-dialog');
-  document.getElementById('btn-join').addEventListener('click', () => {
+  function openJoinDialog() {
     joinDialog.classList.add('open');
     document.getElementById('join-error').textContent = '';
     document.getElementById('join-url').focus();
-  });
+  }
   document.getElementById('join-cancel').addEventListener('click', () => {
     joinDialog.classList.remove('open');
   });
@@ -1347,8 +1198,70 @@
     }
   });
 
-  document.getElementById('btn-stop-hosting').addEventListener('click', networkStandalone);
   document.getElementById('btn-leave').addEventListener('click', networkStandalone);
+
+  // ---- Pill clicks ----------------------------------------------------
+
+  document.querySelectorAll('.mpill').forEach(p => {
+    p.addEventListener('click', () => onPillClick(p));
+  });
+
+  function onPillClick(p) {
+    const target = PILL_TO_MODE[p.dataset.mode];
+    if (target === state.nmode) {
+      // Active pill — already in this mode. Hosting pill is an exception
+      // since hosting lives on /manage; clicking it navigates there.
+      if (target === 'manager') window.location.href = '/manage';
+      return;
+    }
+    if (target === 'standalone') {
+      if (state.nmode === 'manager') {
+        confirmAction('Stop hosting? Any connected clients will be disconnected.', networkStandalone);
+      } else {
+        networkStandalone();
+      }
+      return;
+    }
+    if (target === 'client') {
+      if (state.nmode === 'manager') {
+        confirmAction('Stop hosting and switch to client mode?', () => {
+          networkStandalone().then(openJoinDialog);
+        });
+      } else {
+        openJoinDialog();
+      }
+      return;
+    }
+    if (target === 'manager') {
+      // Navigate to /manage. If currently a client, confirm first.
+      if (state.nmode === 'client') {
+        confirmAction('Leave the current session and start hosting?', () => {
+          networkStandalone().then(() => { window.location.href = '/manage'; });
+        });
+      } else {
+        window.location.href = '/manage';
+      }
+    }
+  }
+
+  // ---- Confirm overlay -----------------------------------------------
+
+  let pendingConfirm = null;
+  function confirmAction(message, onConfirm) {
+    pendingConfirm = onConfirm;
+    document.querySelector('#confirm-overlay .confirm-message').textContent = message;
+    document.getElementById('confirm-overlay').hidden = false;
+  }
+  document.getElementById('confirm-cancel').addEventListener('click', () => {
+    pendingConfirm = null;
+    document.getElementById('confirm-overlay').hidden = true;
+  });
+  document.getElementById('confirm-ok').addEventListener('click', () => {
+    const fn = pendingConfirm;
+    pendingConfirm = null;
+    document.getElementById('confirm-overlay').hidden = true;
+    if (fn) fn();
+  });
 
   // ---- SSE subscriber -------------------------------------------------
 
@@ -1356,27 +1269,6 @@
     const es = new EventSource('/api/session/events');
     es.addEventListener('mode-change', e => {
       try { applyNetworkMode(JSON.parse(e.data)); } catch (err) { console.error(err); }
-    });
-    es.addEventListener('session-created', e => {
-      try { addSessionToList(JSON.parse(e.data)); } catch (err) { console.error(err); }
-    });
-    es.addEventListener('session-connected', e => {
-      try { updateSessionStatus(JSON.parse(e.data).fingerprint, 'connected'); } catch (err) {}
-    });
-    es.addEventListener('session-disconnected', e => {
-      try { updateSessionStatus(JSON.parse(e.data).fingerprint, 'waiting'); } catch (err) {}
-    });
-    es.addEventListener('session-removed', e => {
-      try { removeSessionFromList(JSON.parse(e.data).fingerprint); } catch (err) {}
-    });
-    es.addEventListener('session-hello', e => {
-      try { const ev = JSON.parse(e.data); setSessionLabel(ev.fingerprint, ev.label); } catch (err) {}
-    });
-    es.addEventListener('session-sequences', e => {
-      try { const ev = JSON.parse(e.data); populateSessionPicker(ev.fingerprint, ev.payload); } catch (err) {}
-    });
-    es.addEventListener('session-state', e => {
-      try { const ev = JSON.parse(e.data); updateSessionDetail(ev.fingerprint, ev.payload); } catch (err) {}
     });
     es.addEventListener('network-verb', e => {
       try {
@@ -1397,6 +1289,13 @@
       console.warn('initial mode load failed:', err);
     }
     startEventSource();
+    // The /manage page sends users here with #join to open the join
+    // dialog. Honor it once, then clear the hash so a refresh doesn't
+    // re-open the dialog.
+    if (window.location.hash === '#join') {
+      history.replaceState(null, '', window.location.pathname);
+      openJoinDialog();
+    }
   }
 
   loadConfig().then(() => {

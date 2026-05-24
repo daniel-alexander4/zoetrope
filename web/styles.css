@@ -494,15 +494,17 @@ body.mode-field .balls-only { display: none !important; }
 
 /* ---- Network modes -------------------------------------------------- */
 
-#manager-view,
 #client-status { display: none; }
-body.nmode-manager #stage,
-body.nmode-manager #hud,
-body.nmode-manager #editor { display: none; }
-body.nmode-manager #manager-view { display: flex; }
 body.nmode-client #editor { display: none; }
 body.nmode-client #hud { pointer-events: none; opacity: 0.0; }
 body.nmode-client #client-status { display: flex; }
+/* While hosting on the ball page the user can still self-test locally;
+   the hosting state is shown via the pill, never by taking over the UI.
+   Pills stay visible (no idle fade) so the hosting state is always
+   readable. */
+body.nmode-manager #hud.idle { opacity: 1; }
+/* Balls/Field tabs are only meaningful in standalone. */
+body:not(.nmode-standalone) #transport .tabs { display: none !important; }
 
 /* Network block inside the editor (visible only in standalone). */
 .network-block {
@@ -539,35 +541,153 @@ body:not(.nmode-standalone) .network-block { display: none; }
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-/* Manager view */
-#manager-view {
-  position: fixed;
-  inset: 0;
+/* ---- Mode pills (shared by ball page + manage page) ---------------- */
+
+.mode-pills {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
   background: var(--base);
-  color: var(--text);
-  padding: 24px;
-  overflow: auto;
-  flex-direction: column;
-  gap: 16px;
+  border: 1px solid var(--overlay);
+  border-radius: 999px;
 }
-#manager-view > header {
+.mpill {
+  background: transparent;
+  color: var(--subtext);
+  border: 0;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 12px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.mpill:hover {
+  color: var(--text);
+  background: var(--overlay);
+}
+.mpill.active {
+  background: var(--accent);
+  color: var(--base);
+  font-weight: 600;
+}
+.mpill.active:hover {
+  background: var(--accent);
+}
+
+/* On the ball page, pills sit in the HUD above the transport row. */
+#hud .mode-pills {
+  margin-bottom: 8px;
+  pointer-events: auto;
+}
+
+/* ---- Manage page chrome -------------------------------------------- */
+
+body.page-manage {
+  overflow: auto;
+}
+#manage-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-bottom: 12px;
+  gap: 16px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--overlay);
+  background: rgba(17, 17, 27, 0.95);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
-#manager-view > header h2 {
-  margin: 0;
-  font-size: 20px;
+#manage-topbar .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#manage-topbar .brand-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+}
+#manage-topbar .brand-name {
+  font-size: 15px;
   font-weight: 600;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-#btn-stop-hosting {
-  background: var(--danger);
+#manage-topbar .page-label {
+  font-size: 13px;
+  color: var(--subtext);
+  margin-left: 4px;
+}
+#manage-topbar .back-link {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--subtext);
+  text-decoration: none;
+}
+#manage-topbar .back-link:hover {
+  color: var(--text);
+}
+#manage-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+.empty-hint {
+  padding: 8px 0 0 0;
+  font-size: 13px;
+  color: var(--subtext);
+}
+.empty-hint strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+#identity-panel[hidden] { display: none; }
+.copy-btn {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.copy-btn:hover { background: var(--overlay); }
+
+/* ---- Confirm overlay (manage page) --------------------------------- */
+#confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+#confirm-overlay[hidden] { display: none; }
+.confirm-card {
+  background: var(--surface);
+  border: 1px solid var(--overlay);
+  border-radius: 10px;
+  padding: 18px 20px;
+  width: min(420px, calc(100vw - 32px));
+}
+.confirm-message {
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.confirm-actions button {
+  background: var(--accent);
   color: var(--base);
   border: 0;
   border-radius: 6px;
@@ -575,6 +695,12 @@ body:not(.nmode-standalone) .network-block { display: none; }
   font-size: 13px;
   cursor: pointer;
 }
+.confirm-actions button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--overlay);
+}
+
 #identity-panel,
 #sessions {
   background: var(--surface);
