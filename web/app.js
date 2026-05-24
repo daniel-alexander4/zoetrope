@@ -193,7 +193,8 @@
     const item = currentItem();
     if (!item) return;
     // Speed is on a 0-10 user scale; 10 = 1 cycle/sec.
-    const cps = (Math.max(0, state.config.speed || 5) / 10) * state.speedMul;
+    // Nullish coalescing (??) — `|| 5` would treat speed=0 as the default.
+    const cps = (Math.max(0, state.config.speed ?? 5) / 10) * state.speedMul;
     state.t += dt * cps;
     while (state.t >= 1) {
       state.t -= 1;
