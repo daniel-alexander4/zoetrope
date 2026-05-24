@@ -17,7 +17,9 @@ func newRouter(store *configStore) http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	mux.Handle("/", http.FileServer(http.FS(static)))
+	// Disable caching so a rebuilt binary always serves fresh JS/CSS to
+	// the open browser tab.
+	mux.Handle("/", noCache(http.FileServer(http.FS(static))))
 
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -39,4 +41,11 @@ func newRouter(store *configStore) http.Handler {
 	})
 
 	return mux
+}
+
+func noCache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		h.ServeHTTP(w, r)
+	})
 }

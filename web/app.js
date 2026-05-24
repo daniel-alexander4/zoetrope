@@ -444,13 +444,23 @@
   }
 
   async function saveConfig() {
-    const r = await fetch('/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state.config),
-    });
-    if (r.ok) markClean();
-    else document.getElementById('save-status').textContent = 'save failed';
+    try {
+      const r = await fetch('/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state.config),
+      });
+      if (!r.ok) {
+        document.getElementById('save-status').textContent = 'save failed (' + r.status + ')';
+        return;
+      }
+      markClean();
+      document.getElementById('editor').classList.add('hidden');
+      hideHud();
+    } catch (err) {
+      console.error('save failed:', err);
+      document.getElementById('save-status').textContent = 'save failed: ' + err.message;
+    }
   }
 
   // ---- Wiring -----------------------------------------------------------
@@ -493,15 +503,17 @@
   let idleTimer = null;
   let mouseOverHud = false;
 
+  function hideHud() {
+    clearTimeout(idleTimer);
+    hud.classList.add('idle');
+    document.body.style.cursor = 'none';
+  }
   function showHud() {
     hud.classList.remove('idle');
     document.body.style.cursor = '';
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      if (!mouseOverHud) {
-        hud.classList.add('idle');
-        document.body.style.cursor = 'none';
-      }
+      if (!mouseOverHud) hideHud();
     }, IDLE_MS);
   }
   document.addEventListener('mousemove', showHud);
