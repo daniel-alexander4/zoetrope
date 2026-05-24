@@ -67,7 +67,8 @@
       return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
     },
 
-    'figure-8': (t, item, vp) => {
+    'infinity-v': (t, item, vp) => {
+      // Vertical infinity (8 standing up — lobes stacked).
       const m = item.ballSize / 2;
       const ampX = (vp.w - 2 * m) / 2 - 8;
       const ampY = (vp.h - 2 * m) / 2 - 8;
@@ -78,6 +79,42 @@
         x: cx + sign * ampX * Math.sin(TAU * 2 * t),
         y: cy + ampY * Math.sin(TAU * t),
       };
+    },
+
+    'infinity-h': (t, item, vp) => {
+      // Horizontal infinity (∞ on its side — lobes side by side).
+      const m = item.ballSize / 2;
+      const ampX = (vp.w - 2 * m) / 2 - 8;
+      const ampY = (vp.h - 2 * m) / 2 - 8;
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const sign = item.direction === 'ccw' ? -1 : 1;
+      return {
+        x: cx + ampX * Math.sin(TAU * t),
+        y: cy + sign * ampY * Math.sin(TAU * 2 * t),
+      };
+    },
+
+    'diag-ulbr': (t, item, vp) => {
+      // Upper-left ↔ bottom-right diagonal sweep.
+      const m = item.ballSize / 2;
+      const ampX = (vp.w - 2 * m) / 2;
+      const ampY = (vp.h - 2 * m) / 2;
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const pos = -Math.cos(TAU * t);
+      return { x: cx + ampX * pos, y: cy + ampY * pos };
+    },
+
+    'diag-urbl': (t, item, vp) => {
+      // Upper-right ↔ bottom-left diagonal sweep.
+      const m = item.ballSize / 2;
+      const ampX = (vp.w - 2 * m) / 2;
+      const ampY = (vp.h - 2 * m) / 2;
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const pos = -Math.cos(TAU * t);
+      return { x: cx - ampX * pos, y: cy + ampY * pos };
     },
 
     'bounce': (t, item, vp) => {

@@ -307,11 +307,16 @@ html, body {
 }
 
 .item[data-pattern="circle"] .angle-wrap,
-.item[data-pattern="figure-8"] .angle-wrap,
+.item[data-pattern="infinity-h"] .angle-wrap,
+.item[data-pattern="infinity-v"] .angle-wrap,
 .item[data-pattern="h-sweep"] .direction-wrap,
 .item[data-pattern="h-sweep"] .angle-wrap,
 .item[data-pattern="v-sweep"] .direction-wrap,
 .item[data-pattern="v-sweep"] .angle-wrap,
+.item[data-pattern="diag-ulbr"] .direction-wrap,
+.item[data-pattern="diag-ulbr"] .angle-wrap,
+.item[data-pattern="diag-urbl"] .direction-wrap,
+.item[data-pattern="diag-urbl"] .angle-wrap,
 .item[data-pattern="bounce"] .direction-wrap {
   display: none;
 }

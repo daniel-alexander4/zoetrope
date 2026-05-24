@@ -33,8 +33,11 @@ func defaultConfig() Config {
 		Playlist: []PlaylistItem{
 			{Pattern: "h-sweep", Color: "#f5e0dc", BallSize: 24, Duration: 2.0, Repeats: 3},
 			{Pattern: "v-sweep", Color: "#f9e2af", BallSize: 24, Duration: 2.0, Repeats: 3},
+			{Pattern: "diag-ulbr", Color: "#fab387", BallSize: 24, Duration: 2.5, Repeats: 3},
+			{Pattern: "diag-urbl", Color: "#eba0ac", BallSize: 24, Duration: 2.5, Repeats: 3},
 			{Pattern: "circle", Color: "#a6e3a1", BallSize: 24, Duration: 3.0, Repeats: 3, Direction: "cw"},
-			{Pattern: "figure-8", Color: "#89b4fa", BallSize: 24, Duration: 4.0, Repeats: 3, Direction: "cw"},
+			{Pattern: "infinity-h", Color: "#89b4fa", BallSize: 24, Duration: 4.0, Repeats: 3, Direction: "cw"},
+			{Pattern: "infinity-v", Color: "#cba6f7", BallSize: 24, Duration: 4.0, Repeats: 3, Direction: "cw"},
 			{Pattern: "bounce", Color: "#f38ba8", BallSize: 24, Duration: 6.0, Repeats: 1, AngleDeg: 37},
 		},
 	}

@@ -46,13 +46,16 @@ manager. The browser tab is harmless on its own.
 
 ## Patterns
 
-| Pattern   | Cycle = one full…              | Direction (`cw`/`ccw`) | `angleDeg` |
-| --------- | ------------------------------ | ---------------------- | ---------- |
-| h-sweep   | left → right → left            | —                      | —          |
-| v-sweep   | top → bottom → top             | —                      | —          |
-| circle    | revolution                     | yes                    | —          |
-| figure-8  | trace of the figure 8          | yes                    | —          |
-| bounce    | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
+| Pattern     | Cycle = one full…              | Direction (`cw`/`ccw`) | `angleDeg` |
+| ----------- | ------------------------------ | ---------------------- | ---------- |
+| h-sweep     | left → right → left            | —                      | —          |
+| v-sweep     | top → bottom → top             | —                      | —          |
+| diag-ulbr   | upper-left ↔ bottom-right (↘)  | —                      | —          |
+| diag-urbl   | upper-right ↔ bottom-left (↙)  | —                      | —          |
+| circle      | revolution                     | yes                    | —          |
+| infinity-h  | trace of ∞ (lobes side by side) | yes                   | —          |
+| infinity-v  | trace of vertical 8 (lobes stacked) | yes               | —          |
+| bounce      | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
 
 `duration` is the number of seconds one cycle takes (lower = faster).
 `repeats` is how many cycles the item plays before the playlist advances.
