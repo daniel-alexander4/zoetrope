@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log"
@@ -9,16 +10,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
 
 const appName = "zoetrope"
 
-// version is overridden at build time via -ldflags "-X main.version=...".
-// The default tags local `go run .` / `go build` builds so they're
-// distinguishable from official releases produced by build/build.sh.
-var version = "0.0.0-dev"
+//go:embed VERSION
+var versionRaw string
+var version = strings.TrimSpace(versionRaw)
 
 func main() {
 	log.SetFlags(log.Ltime)

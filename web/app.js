@@ -564,7 +564,7 @@
       if (state.dirty) return;
       closeTimer = setTimeout(() => {
         if (!state.dirty) editor.classList.add('hidden');
-      }, 1000);
+      }, 500);
     });
     editor.addEventListener('mouseenter', () => {
       clearTimeout(closeTimer);

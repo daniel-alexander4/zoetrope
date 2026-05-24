@@ -1,7 +1,7 @@
 //go:build ignore
 
 // genicon writes a 256x256 PNG of a colored ball on a dark background.
-// Run: go run build/genicon.go > build/icon.png
+// Run: go run build/genicon.go > web/icon.png
 package main
 
 import (
