@@ -3,27 +3,8 @@
 
   const TAU = Math.PI * 2;
 
-  const PATTERN_LABELS = {
-    'h-sweep':    'Horizontal sweep',
-    'v-sweep':    'Vertical sweep',
-    'diag-ulbr':  'Diagonal ↘ (UL↔BR)',
-    'diag-urbl':  'Diagonal ↙ (UR↔BL)',
-    'bounce':     'Bounce',
-    'circle':     'Circle',
-    'infinity-h': 'Infinity ∞',
-    'infinity-v': 'Infinity 8 (vertical)',
-  };
-
-  const PATTERN_DEFAULTS = {
-    'h-sweep':    { color: '#f5e0dc' },
-    'v-sweep':    { color: '#f9e2af' },
-    'diag-ulbr':  { color: '#fab387' },
-    'diag-urbl':  { color: '#eba0ac' },
-    'bounce':     { color: '#f38ba8', angleDeg: 37 },
-    'circle':     { color: '#a6e3a1', direction: 'cw' },
-    'infinity-h': { color: '#89b4fa', direction: 'cw' },
-    'infinity-v': { color: '#cba6f7', direction: 'cw' },
-  };
+  // PATTERN_LABELS lives on window.zoetropeEditor (shared with /manage).
+  const PATTERN_LABELS = window.zoetropeEditor.PATTERN_LABELS;
 
   const state = {
     config: null,
@@ -624,6 +605,9 @@
       case 'set-sequence':
         if (Number.isInteger(verb.index)) jumpToItem(verb.index);
         break;
+      case 'set-config':
+        if (verb.config) applyPushedConfig(verb.config);
+        break;
       default:
         console.warn('unknown verb:', verb);
     }
@@ -632,253 +616,15 @@
     if (state.nmode === 'client') schedulePushClientState();
   }
 
-  // ---- Editor -----------------------------------------------------------
-
-  function renderEditor() {
-    const list = document.getElementById('playlist');
-    list.innerHTML = '';
-    const tmpl = document.getElementById('item-template');
-    state.config.playlist.forEach((item, i) => {
-      const node = tmpl.content.firstElementChild.cloneNode(true);
-      node.dataset.pattern = item.pattern;
-      node.dataset.index = String(i);
-      node.querySelector('.pattern-name').textContent = PATTERN_LABELS[item.pattern] || item.pattern;
-      node.querySelector('.color').value = item.color || '#ffffff';
-      node.querySelector('.repeats').value = item.repeats ?? 1;
-      node.querySelector('.direction').value = item.direction || 'cw';
-      node.querySelector('.angle').value = item.angleDeg ?? 37;
-
-      node.querySelector('.color').addEventListener('input', e => {
-        item.color = e.target.value;
-        markDirty();
-      });
-      node.querySelector('.repeats').addEventListener('input', e => {
-        item.repeats = +e.target.value;
-        markDirty();
-      });
-      node.querySelector('.direction').addEventListener('change', e => {
-        item.direction = e.target.value;
-        markDirty();
-      });
-      node.querySelector('.angle').addEventListener('input', e => {
-        item.angleDeg = +e.target.value;
-        markDirty();
-      });
-
-      // Drag-to-reorder: title bar activates the LI's draggable state on
-      // mousedown so inputs inside the body row remain freely interactive.
-      // A one-shot mouseup listener resets draggable in case the user
-      // clicks without actually dragging.
-      const titleBar = node.querySelector('.title-bar');
-      titleBar.addEventListener('mousedown', e => {
-        if (e.target.closest('.del')) return;  // don't drag when clicking ×
-        node.draggable = true;
-        document.addEventListener('mouseup', () => { node.draggable = false; }, { once: true });
-      });
-      titleBar.addEventListener('click', e => {
-        if (e.target.closest('.del')) return;  // delete handles its own click
-        dispatch({ type: 'jump', index: +node.dataset.index });
-      });
-
-      node.addEventListener('dragstart', e => {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', node.dataset.index);
-        node.classList.add('dragging');
-      });
-      node.addEventListener('dragend', () => {
-        node.classList.remove('dragging');
-        node.draggable = false;
-        clearDropIndicators();
-      });
-      node.addEventListener('dragover', e => {
-        if (node.classList.contains('dragging')) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        const rect = node.getBoundingClientRect();
-        const above = (e.clientY - rect.top) < rect.height / 2;
-        clearDropIndicators();
-        node.classList.add(above ? 'drop-above' : 'drop-below');
-      });
-      node.addEventListener('dragleave', e => {
-        if (!node.contains(e.relatedTarget)) {
-          node.classList.remove('drop-above', 'drop-below');
-        }
-      });
-      node.addEventListener('drop', e => {
-        e.preventDefault();
-        const fromIdx = +e.dataTransfer.getData('text/plain');
-        const toIdx = +node.dataset.index;
-        const rect = node.getBoundingClientRect();
-        const above = (e.clientY - rect.top) < rect.height / 2;
-        reorderItem(fromIdx, above ? toIdx : toIdx + 1);
-      });
-
-      node.querySelector('.del').addEventListener('click', () => deleteItem(i));
-
-      list.appendChild(node);
-    });
-    updatePlayingHighlight();
-  }
-
-  function clearDropIndicators() {
-    document.querySelectorAll('#playlist .item.drop-above, #playlist .item.drop-below')
-      .forEach(el => el.classList.remove('drop-above', 'drop-below'));
-  }
-
-  function reorderItem(fromIdx, insertAt) {
-    const arr = state.config.playlist;
-    if (fromIdx < 0 || fromIdx >= arr.length) return;
-    if (insertAt === fromIdx || insertAt === fromIdx + 1) return;
-    const playing = arr[state.itemIdx];
-    const [moved] = arr.splice(fromIdx, 1);
-    const adjusted = insertAt > fromIdx ? insertAt - 1 : insertAt;
-    arr.splice(adjusted, 0, moved);
-    state.itemIdx = arr.indexOf(playing);
-    markDirty();
-    renderEditor();
-  }
-
-  function deleteItem(i) {
-    if (state.config.playlist.length <= 1) return;
-    state.config.playlist.splice(i, 1);
-    if (state.itemIdx >= state.config.playlist.length) {
-      enterItem(0);
-    } else if (state.itemIdx > i) {
-      state.itemIdx -= 1;
-    } else if (state.itemIdx === i) {
-      enterItem(state.itemIdx % state.config.playlist.length);
+  // Apply a config pushed by the manager on session-connect. Back up
+  // the local config on first push so we can restore on session end;
+  // delegate the editor-side re-render to the editor module.
+  function applyPushedConfig(cfg) {
+    if (state.sessionConfigBackup == null) {
+      state.sessionConfigBackup = JSON.parse(JSON.stringify(state.config));
     }
-    markDirty();
-    renderEditor();
-  }
-
-  function addItem(pattern) {
-    if (!PATTERN_LABELS[pattern]) return;
-    const defaults = PATTERN_DEFAULTS[pattern] || {};
-    state.config.playlist.push({
-      pattern,
-      repeats: 3,
-      ...defaults,
-    });
-    markDirty();
-    renderEditor();
-  }
-
-  function populateAddPattern() {
-    const sel = document.getElementById('add-pattern');
-    Object.entries(PATTERN_LABELS).forEach(([key, label]) => {
-      const opt = document.createElement('option');
-      opt.value = key;
-      opt.textContent = label;
-      sel.appendChild(opt);
-    });
-  }
-
-  function markDirty() {
-    state.dirty = true;
-    document.getElementById('save-status').textContent = '● unsaved';
-  }
-
-  function markClean() {
-    state.dirty = false;
-    document.getElementById('save-status').textContent = 'saved';
-    setTimeout(() => {
-      if (!state.dirty) document.getElementById('save-status').textContent = '';
-    }, 1500);
-  }
-
-  async function loadConfig() {
-    const r = await fetch('/config', { cache: 'no-store' });
-    if (!r.ok) throw new Error('load config: ' + r.status);
-    state.config = await r.json();
+    window.zoetropeEditor.applyConfig(cfg);
     enterItem(0);
-    document.getElementById('bg-color').value = state.config.background || '#000000';
-    document.getElementById('ball-size').value = state.config.ballSize;
-    document.getElementById('speed-input').value = state.config.speed;
-    document.getElementById('linger-input').value = state.config.lingerSec;
-    document.getElementById('linger-lead-input').value = state.config.lingerLeadFrac ?? 0;
-    document.getElementById('field-speed-input').value = state.config.field.speed ?? 3;
-    document.getElementById('field-palette-input').value = state.config.field.palette || 'Happy';
-    document.getElementById('field-shape-input').value = state.config.field.shape || 'circles';
-    document.getElementById('field-shuffle-input').checked = !!state.config.field.shuffleColors;
-    document.getElementById('field-loop-input').checked = !!state.config.field.loop;
-    document.getElementById('field-duration-input').value = state.config.field.shapeDurationSec ?? 12;
-    updateRegenVisibility();
-    applyMode(state.config.mode || 'balls');
-    renderEditor();
-  }
-
-  function updateRegenVisibility() {
-    const f = state.config.field || {};
-    const usesRandom = f.shape === 'random' || !!f.shuffleColors;
-    document.getElementById('field-shape-regen').style.display = usesRandom ? '' : 'none';
-  }
-
-  function ensureRandomSeed() {
-    if (!state.config.field.randomSeed) {
-      state.config.field.randomSeed = (Math.random() * 0x7fffffff) | 0;
-    }
-  }
-
-  function applyMode(mode) {
-    state.config.mode = mode;
-    document.body.classList.toggle('mode-balls', mode === 'balls');
-    document.body.classList.toggle('mode-field', mode === 'field');
-    document.getElementById('tab-balls').classList.toggle('active', mode === 'balls');
-    document.getElementById('tab-field').classList.toggle('active', mode === 'field');
-    if (mode === 'field') {
-      resetField();
-      // Drawer holds only balls-mode content now; close it on the way in.
-      document.getElementById('editor').classList.add('hidden');
-    }
-  }
-
-  // Quiet auto-save used by HUD field controls — no drawer/HUD UI side
-  // effects, debounced so rapid input changes coalesce.
-  let autoSaveTimer = null;
-  function scheduleAutoSave() {
-    clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(autoSave, 300);
-  }
-  async function autoSave() {
-    try {
-      const r = await fetch('/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Zoetrope': '1' },
-        body: JSON.stringify(state.config),
-      });
-      if (!r.ok) {
-        console.warn('autosave failed:', r.status);
-        return;
-      }
-      markClean();
-    } catch (err) {
-      console.warn('autosave failed:', err);
-    }
-  }
-
-  async function saveConfig() {
-    try {
-      const r = await fetch('/config', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Zoetrope': '1',
-        },
-        body: JSON.stringify(state.config),
-      });
-      if (!r.ok) {
-        document.getElementById('save-status').textContent = 'save failed (' + r.status + ')';
-        return;
-      }
-      markClean();
-      document.getElementById('editor').classList.add('hidden');
-      hideHud();
-    } catch (err) {
-      console.error('save failed:', err);
-      document.getElementById('save-status').textContent =
-        'save failed: ' + err.message + ' — server moved? try refreshing the page';
-    }
   }
 
   // ---- Wiring -----------------------------------------------------------
@@ -928,95 +674,22 @@
       clearTimeout(closeTimer);
     });
   }
-  populateAddPattern();
-  document.getElementById('add-pattern').addEventListener('change', e => {
-    if (!e.target.value) return;
-    addItem(e.target.value);
-    e.target.value = '';
-  });
-  document.getElementById('btn-save').addEventListener('click', saveConfig);
-  document.getElementById('btn-revert').addEventListener('click', () => loadConfig().then(markClean));
-  document.getElementById('bg-color').addEventListener('input', e => {
-    state.config.background = e.target.value;
-    markDirty();
-  });
-  document.getElementById('ball-size').addEventListener('input', e => {
-    state.config.ballSize = +e.target.value;
-    markDirty();
-  });
-  document.getElementById('speed-input').addEventListener('input', e => {
-    state.config.speed = +e.target.value;
-    markDirty();
-  });
-  document.getElementById('linger-input').addEventListener('input', e => {
-    state.config.lingerSec = +e.target.value;
-    markDirty();
-  });
-  document.getElementById('linger-lead-input').addEventListener('input', e => {
-    state.config.lingerLeadFrac = +e.target.value;
-    markDirty();
-  });
-  document.getElementById('tab-balls').addEventListener('click', () => {
-    if (state.config.mode === 'balls') return;
-    applyMode('balls');
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('tab-field').addEventListener('click', () => {
-    if (state.config.mode === 'field') return;
-    applyMode('field');
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('field-speed-input').addEventListener('input', e => {
-    state.config.field.speed = +e.target.value;
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('field-palette-input').addEventListener('change', e => {
-    state.config.field.palette = e.target.value;
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('field-shape-input').addEventListener('change', e => {
-    state.config.field.shape = e.target.value;
-    if (e.target.value === 'random') ensureRandomSeed();
-    updateRegenVisibility();
-    resetField();
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('field-shuffle-input').addEventListener('change', e => {
-    state.config.field.shuffleColors = e.target.checked;
-    if (e.target.checked) ensureRandomSeed();
-    updateRegenVisibility();
-    resetField();
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('field-shape-regen').addEventListener('click', () => {
-    state.config.field.randomSeed = (Math.random() * 0x7fffffff) | 0;
-    resetField();
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('field-loop-input').addEventListener('change', e => {
-    state.config.field.loop = e.target.checked;
-    if (e.target.checked) {
-      // Pick up at the start of the HD hold so toggling on doesn't flash
-      // back to low-def if we were already resolved.
-      state.field.loopT = LOOP_RES_END;
-    } else {
-      // Lock in fully-resolved HD on the way out of loop mode.
-      state.field.introT = 1;
-    }
-    markDirty();
-    scheduleAutoSave();
-  });
-  document.getElementById('field-duration-input').addEventListener('input', e => {
-    state.config.field.shapeDurationSec = +e.target.value;
-    markDirty();
-    scheduleAutoSave();
+  // Editor wiring lives in editor.js (shared with /manage). Initialize
+  // it with hooks back into the animation engine — jumping to a
+  // playlist item, resetting field render state, closing the drawer
+  // after save.
+  window.zoetropeEditor.init(state, {
+    onEnterItem: enterItem,
+    onJump: (idx) => dispatch({ type: 'jump', index: idx }),
+    onFieldReset: resetField,
+    onFieldLoopToggle: (checked) => {
+      if (checked) state.field.loopT = LOOP_RES_END;
+      else state.field.introT = 1;
+    },
+    onSaveCloseEditor: () => {
+      document.getElementById('editor').classList.add('hidden');
+      hideHud();
+    },
   });
 
   // ---- Auto-hide HUD when mouse is idle --------------------------------
@@ -1086,6 +759,7 @@
   }
 
   function applyNetworkMode(snap) {
+    const prev = state.nmode;
     state.nmode = snap.mode || 'standalone';
     document.body.classList.remove('nmode-standalone', 'nmode-manager', 'nmode-client');
     document.body.classList.add('nmode-' + state.nmode);
@@ -1099,6 +773,16 @@
       pushClientHello();
       pushClientSequences();
       pushClientState();
+    }
+
+    // Leaving client mode: restore the local config the manager
+    // replaced via set-config, if any. Never write to /api/config —
+    // the backup is in-memory and the persisted config was never
+    // touched.
+    if (prev === 'client' && state.nmode !== 'client' && state.sessionConfigBackup) {
+      window.zoetropeEditor.applyConfig(state.sessionConfigBackup);
+      enterItem(0);
+      state.sessionConfigBackup = null;
     }
   }
 
@@ -1298,7 +982,7 @@
     }
   }
 
-  loadConfig().then(() => {
+  window.zoetropeEditor.loadConfig().then(() => {
     heartbeat();
     play();
     requestAnimationFrame(frame);

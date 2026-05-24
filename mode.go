@@ -95,14 +95,16 @@ type modeState struct {
 
 	appName string
 	bus     *eventBus
+	store   *configStore // for pushing current config to clients on connect
 }
 
-func newModeState(appName string, bus *eventBus) *modeState {
+func newModeState(appName string, bus *eventBus, store *configStore) *modeState {
 	return &modeState{
 		current:  modeStandalone,
 		sessions: make(map[string]*session),
 		appName:  appName,
 		bus:      bus,
+		store:    store,
 	}
 }
 
@@ -520,6 +522,29 @@ func (m *modeState) RemoveSession(fp string) error {
 	return nil
 }
 
+// pushConfig writes the current practitioner config to a session as a
+// set-config frame. Called from handleManagerWS right after a WS pairs,
+// so the client renders the practitioner's setup rather than its own
+// local config.
+func (m *modeState) pushConfig(ctx context.Context, sess *session, conn *websocket.Conn) error {
+	if m.store == nil {
+		return nil // no config store wired (shouldn't happen in main flow)
+	}
+	cfg := m.store.Get()
+	sess.mu.Lock()
+	sess.nextSeq++
+	seq := sess.nextSeq
+	sess.mu.Unlock()
+	msg := map[string]any{
+		"type":   "set-config",
+		"seq":    seq,
+		"config": cfg,
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return writeFrame(writeCtx, conn, msg)
+}
+
 // SendVerb forwards a manager-UI verb to the session's WS as a frame.
 func (m *modeState) SendVerb(fp string, verb json.RawMessage) error {
 	sess := m.lookupSession(fp)
@@ -590,6 +615,17 @@ func (m *modeState) handleManagerWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Push the practitioner's current config so the client renders what
+	// was set up on /manage, not their own local config. Fires on every
+	// WS pair (initial + rejoin) so a refreshed client recovers without
+	// the practitioner having to do anything.
+	if err := m.pushConfig(ctx, sess, conn); err != nil {
+		log.Printf("push config to session %s: %v", fp[:8], err)
+		conn.Close(websocket.StatusInternalError, "config push failed")
+		return
+	}
+
 	go pingLoop(ctx, conn)
 	m.managerReadLoop(ctx, sess, conn)
 

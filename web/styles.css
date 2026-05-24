@@ -759,11 +759,115 @@ body.page-manage {
 }
 
 #identity-panel,
+#editor-section,
 #sessions {
   background: var(--surface);
   border: 1px solid var(--overlay);
   border-radius: 8px;
   padding: 16px;
+}
+
+/* In-page editor on /manage. Same input vocabulary as the drawer
+   on /, but laid out in the page flow with a section header. */
+#editor-section .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+#editor-section .section-header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--subtext);
+  font-weight: 500;
+}
+#editor-section .section-header select#add-pattern {
+  background: var(--accent);
+  color: var(--base);
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+#editor-section .section-hint {
+  font-size: 12px;
+  color: var(--subtext);
+  margin: 0 0 12px 0;
+}
+#editor-section .global {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--overlay);
+  font-size: 13px;
+  color: var(--subtext);
+}
+#editor-section .global label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#editor-section .global input[type="number"] {
+  width: 64px;
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+#editor-section .global input[type="color"] {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+#editor-section .group-label {
+  font-weight: 600;
+  color: var(--text);
+}
+#editor-section #playlist {
+  list-style: none;
+  margin: 12px 0 0 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+#editor-section .editor-footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--overlay);
+}
+#editor-section .editor-footer button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#editor-section .editor-footer button#btn-save {
+  background: var(--accent);
+  color: var(--base);
+  border-color: var(--accent);
+}
+#editor-section .editor-footer button:hover {
+  filter: brightness(1.1);
+}
+#editor-section .editor-footer #save-status {
+  font-size: 12px;
+  color: var(--subtext);
 }
 #identity-panel h3,
 #sessions > header h3 {

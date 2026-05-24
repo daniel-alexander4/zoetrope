@@ -37,7 +37,7 @@ func main() {
 
 	hb := &heartbeat{}
 	bus := newEventBus()
-	modes := newModeState(appName, bus)
+	modes := newModeState(appName, bus, store)
 	mux, err := newRouter(store, hb, bus, modes)
 	if err != nil {
 		log.Fatalf("router: %v", err)

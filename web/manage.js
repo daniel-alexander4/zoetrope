@@ -54,12 +54,14 @@
 
     const startCard = document.getElementById('start-card');
     const identity = document.getElementById('identity-panel');
+    const editor = document.getElementById('editor-section');
     const sessions = document.getElementById('sessions');
     const stopBtn = document.getElementById('btn-stop-hosting');
 
     if (mode === 'manager') {
       startCard.hidden = true;
       identity.hidden = false;
+      editor.hidden = false;
       sessions.hidden = false;
       stopBtn.hidden = false;
       document.getElementById('practitioner-fp').textContent = snap.practitioner_fp || '—';
@@ -68,6 +70,7 @@
     } else { // standalone
       startCard.hidden = false;
       identity.hidden = true;
+      editor.hidden = true;
       sessions.hidden = true;
       stopBtn.hidden = true;
       state.sessions.clear();
@@ -278,6 +281,18 @@
   }
   setInterval(heartbeat, 5000);
 
+  // ---- Editor (shared module from editor.js) ------------------------
+
+  window.zoetropeEditor.init(state, {
+    // No animation engine on /manage — these hooks are no-ops.
+    onEnterItem: () => {},
+    onJump: () => {},
+    onFieldReset: () => {},
+    onFieldLoopToggle: () => {},
+    // No drawer to close after save — the editor is in the page flow.
+    onSaveCloseEditor: () => {},
+  });
+
   // ---- Init -----------------------------------------------------------
 
   async function init() {
@@ -287,6 +302,12 @@
     } catch (err) {
       console.warn('initial mode load failed:', err);
     }
+    // Load the practitioner's saved config so the editor has something to
+    // show the moment Hosting mode lights up. Run in parallel with the
+    // SSE bus startup; either order is safe.
+    window.zoetropeEditor.loadConfig().catch(err => {
+      console.warn('editor loadConfig failed:', err);
+    });
     startEventSource();
     heartbeat();
   }
