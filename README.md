@@ -39,7 +39,7 @@ manager. The browser tab is harmless on its own.
   - Speed multiplier (`0.25×` – `4×`)
   - Gear icon — toggle the editor panel
 - **Editor panel (right)** — global controls at top (background color,
-  ball size, cycle duration in seconds); add / reorder / delete playlist
+  ball size, speed in seconds per cycle — lower is faster); add / reorder / delete playlist
   items below; per-item color / repeats / direction / angle. Click
   **Save** to write to the config file; **Revert** discards unsaved
   edits.
