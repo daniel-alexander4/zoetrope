@@ -294,19 +294,49 @@
         markDirty();
       });
 
-      // Replace handle with up/down buttons.
+      // Drag-to-reorder: handle activates the LI's draggable state on
+      // mousedown so inputs inside the row remain freely interactive.
+      // A one-shot mouseup listener resets draggable in case the user
+      // clicks the handle without actually dragging.
       const handle = node.querySelector('.handle');
-      const upBtn = document.createElement('button');
-      upBtn.textContent = '↑';
-      upBtn.title = 'Move up';
-      upBtn.className = 'move';
-      upBtn.addEventListener('click', () => moveItem(i, -1));
-      const downBtn = document.createElement('button');
-      downBtn.textContent = '↓';
-      downBtn.title = 'Move down';
-      downBtn.className = 'move';
-      downBtn.addEventListener('click', () => moveItem(i, +1));
-      handle.replaceWith(upBtn, downBtn);
+      handle.addEventListener('mousedown', () => {
+        node.draggable = true;
+        document.addEventListener('mouseup', () => { node.draggable = false; }, { once: true });
+      });
+      node.dataset.index = String(i);
+
+      node.addEventListener('dragstart', e => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', node.dataset.index);
+        node.classList.add('dragging');
+      });
+      node.addEventListener('dragend', () => {
+        node.classList.remove('dragging');
+        node.draggable = false;
+        clearDropIndicators();
+      });
+      node.addEventListener('dragover', e => {
+        if (node.classList.contains('dragging')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = node.getBoundingClientRect();
+        const above = (e.clientY - rect.top) < rect.height / 2;
+        clearDropIndicators();
+        node.classList.add(above ? 'drop-above' : 'drop-below');
+      });
+      node.addEventListener('dragleave', e => {
+        if (!node.contains(e.relatedTarget)) {
+          node.classList.remove('drop-above', 'drop-below');
+        }
+      });
+      node.addEventListener('drop', e => {
+        e.preventDefault();
+        const fromIdx = +e.dataTransfer.getData('text/plain');
+        const toIdx = +node.dataset.index;
+        const rect = node.getBoundingClientRect();
+        const above = (e.clientY - rect.top) < rect.height / 2;
+        reorderItem(fromIdx, above ? toIdx : toIdx + 1);
+      });
 
       node.querySelector('.del').addEventListener('click', () => deleteItem(i));
 
@@ -315,13 +345,20 @@
     updatePlayingHighlight();
   }
 
-  function moveItem(i, delta) {
-    const j = i + delta;
-    if (j < 0 || j >= state.config.playlist.length) return;
+  function clearDropIndicators() {
+    document.querySelectorAll('#playlist .item.drop-above, #playlist .item.drop-below')
+      .forEach(el => el.classList.remove('drop-above', 'drop-below'));
+  }
+
+  function reorderItem(fromIdx, insertAt) {
     const arr = state.config.playlist;
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-    if (state.itemIdx === i) state.itemIdx = j;
-    else if (state.itemIdx === j) state.itemIdx = i;
+    if (fromIdx < 0 || fromIdx >= arr.length) return;
+    if (insertAt === fromIdx || insertAt === fromIdx + 1) return;
+    const playing = arr[state.itemIdx];
+    const [moved] = arr.splice(fromIdx, 1);
+    const adjusted = insertAt > fromIdx ? insertAt - 1 : insertAt;
+    arr.splice(adjusted, 0, moved);
+    state.itemIdx = arr.indexOf(playing);
     markDirty();
     renderEditor();
   }

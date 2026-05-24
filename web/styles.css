@@ -217,22 +217,33 @@ html, body {
   margin-top: 6px;
 }
 
-.item .move {
-  background: var(--base);
+.item .handle {
+  cursor: grab;
   color: var(--subtext);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  width: 22px;
-  height: 22px;
-  font-size: 11px;
-  padding: 0;
-  cursor: pointer;
+  font-size: 14px;
+  user-select: none;
+  padding: 0 6px;
   line-height: 1;
 }
 
-.item .move:hover {
-  color: var(--text);
-  border-color: var(--accent);
+.item .handle:hover {
+  color: var(--accent);
+}
+
+.item.dragging {
+  opacity: 0.4;
+}
+
+.item.dragging .handle {
+  cursor: grabbing;
+}
+
+.item.drop-above {
+  box-shadow: 0 -2px 0 0 var(--accent);
+}
+
+.item.drop-below {
+  box-shadow: 0 2px 0 0 var(--accent);
 }
 
 .item select, .item input[type="number"] {
