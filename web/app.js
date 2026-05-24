@@ -488,6 +488,17 @@
   document.getElementById('btn-toggle-editor').addEventListener('click', () => {
     document.getElementById('editor').classList.toggle('hidden');
   });
+  document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error('fullscreen failed:', err);
+      });
+    }
+  }
 
   // Auto-close the editor 1s after the mouse leaves it, but only if
   // there are no unsaved changes — never throw away pending edits.
@@ -558,6 +569,7 @@
     if (e.code === 'ArrowLeft') seekPatternStart();
     if (e.code === 'ArrowRight') nextPattern();
     if (e.code === 'Home') seekPlaylistStart();
+    if (e.code === 'KeyF') toggleFullscreen();
   });
 
   // Heartbeat: tell the server we're still here. If the tab closes (or
