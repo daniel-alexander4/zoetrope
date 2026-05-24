@@ -74,21 +74,30 @@ the viewer can keep their eyes moving "off-screen" and pick the ball
 back up smoothly when it returns. Cycle time extends by 2 × `lingerSec`
 so the on-screen motion pace stays consistent regardless of dwell.
 
-## Build
+## Build & versioning
 
 Requires Go 1.25+, `curl`, `zip`. AppImage assembly downloads
 `appimagetool` on first run.
 
+The version string lives in the top-level `VERSION` file (e.g. `0.1.0`,
+no leading `v`). `build/build.sh` reads it and bakes it into every
+artifact via `-ldflags "-X main.version=…"`; the macOS `Info.plist`
+gets the same value. Override per-build with an arg or env var:
+
 ```sh
-./build/build.sh           # → dist/{linux, windows, macOS}
-./build/build.sh 1.2.3     # set version string baked into Info.plist
+./build/build.sh           # reads VERSION
+./build/build.sh 1.2.3     # overrides
+VERSION=1.2.3 ./build/build.sh
 ```
 
-For local dev:
+For local dev, the in-source default is `0.0.0-dev` so it's easy to
+tell a `go run .` / `go build` binary from a release.
 
 ```sh
 go run .
 ```
+
+To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 
 ## Layout
 

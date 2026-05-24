@@ -641,6 +641,11 @@
     if (!document.hidden) heartbeat();
   });
 
+  fetch('/version', { cache: 'no-store' })
+    .then(r => r.text())
+    .then(v => { document.getElementById('version').textContent = v.trim(); })
+    .catch(() => {});
+
   loadConfig().then(() => {
     heartbeat();
     play();

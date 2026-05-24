@@ -15,9 +15,15 @@ import (
 
 const appName = "zoetrope"
 
+// version is overridden at build time via -ldflags "-X main.version=...".
+// The default tags local `go run .` / `go build` builds so they're
+// distinguishable from official releases produced by build/build.sh.
+var version = "0.0.0-dev"
+
 func main() {
 	log.SetFlags(log.Ltime)
 	log.SetPrefix(appName + ": ")
+	log.Printf("zoetrope v%s", version)
 
 	configPath, err := configFilePath(appName)
 	if err != nil {

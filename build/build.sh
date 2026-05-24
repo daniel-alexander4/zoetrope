@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="${1:-${VERSION:-0.1.0}}"
+VERSION="${1:-${VERSION:-$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo 0.0.0-dev)}}"
 DIST="dist"
 APP="zoetrope"
 DISPLAY_NAME="Zoetrope"
@@ -17,7 +17,7 @@ DISPLAY_NAME="Zoetrope"
 rm -rf "$DIST"
 mkdir -p "$DIST"
 
-LDFLAGS_RELEASE="-s -w"
+LDFLAGS_RELEASE="-s -w -X main.version=${VERSION}"
 GOFLAGS_RELEASE=(-trimpath)
 
 echo "==> Version: $VERSION"

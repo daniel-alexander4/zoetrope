@@ -53,6 +53,12 @@ func newRouter(store *configStore, hb *heartbeat) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte("v" + version + "\n"))
+	})
+
 	mux.HandleFunc("PUT /config", func(w http.ResponseWriter, r *http.Request) {
 		var cfg Config
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {

@@ -334,6 +334,13 @@ html, body {
   color: var(--subtext);
 }
 
+#version {
+  font-size: 11px;
+  color: var(--subtext);
+  opacity: 0.6;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
 .hide-irrelevant .direction-wrap,
 .hide-irrelevant .angle-wrap {
   display: none;
