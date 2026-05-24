@@ -499,7 +499,7 @@
 
   // ---- Auto-hide HUD when mouse is idle --------------------------------
   const hud = document.getElementById('hud');
-  const IDLE_MS = 2000;
+  const IDLE_MS = 300;
   let idleTimer = null;
   let mouseOverHud = false;
 
