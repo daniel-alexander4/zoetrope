@@ -13,7 +13,7 @@ Double-click the appropriate artifact for your OS:
 
 | OS      | File                          | First-launch notes                                              |
 | ------- | ----------------------------- | --------------------------------------------------------------- |
-| Linux   | `Zoetrope-x86_64.AppImage`    | `chmod +x` it once, then double-click.                          |
+| Linux   | `Zoetrope-VERSION-linux-amd64.deb` | `sudo apt install ./Zoetrope-*.deb`, then launch from the apps menu. |
 | Windows | `Zoetrope.exe`                | SmartScreen will warn (unsigned). Click *More info → Run anyway*.|
 | macOS   | `Zoetrope.app`                | Right-click → **Open** the first time (unsigned).               |
 

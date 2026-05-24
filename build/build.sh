@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Build Zoetrope artifacts for Linux (AppImage, .deb, bare binary),
-# Windows (.exe), and macOS (.app universal, zipped).
+# Build Zoetrope artifacts for Linux (.deb, bare binary), Windows (.exe),
+# and macOS (.app universal, zipped).
 #
 # Usage: ./build/build.sh [version]
 # Output goes to dist/. Filenames embed the version, e.g.
-#   Zoetrope-0.1.0-linux-amd64.AppImage
 #   Zoetrope-0.1.0-linux-amd64.deb
 #   Zoetrope-0.1.0-windows-amd64.exe
 #   Zoetrope-0.1.0-mac-universal.zip   (contains Zoetrope.app)
@@ -71,32 +70,6 @@ cp web/icon.png "$APP_BUNDLE/Contents/Resources/icon.png"
 # Zip the .app for distribution (preserves exec bits)
 (cd "$DIST" && zip -qry "${DISPLAY_STEM}-mac-universal.zip" "$DISPLAY_NAME.app")
 
-# --- Linux AppImage ----------------------------------------------------------
-echo "==> Building Linux AppImage"
-APPDIR="$DIST/$DISPLAY_NAME.AppDir"
-rm -rf "$APPDIR"
-mkdir -p "$APPDIR/usr/bin"
-cp "$LINUX_BIN" "$APPDIR/usr/bin/$APP"
-chmod +x "$APPDIR/usr/bin/$APP"
-cp build/AppRun "$APPDIR/AppRun"
-chmod +x "$APPDIR/AppRun"
-cp build/zoetrope.desktop "$APPDIR/$APP.desktop"
-cp web/icon.png "$APPDIR/$APP.png"
-cp web/icon.png "$APPDIR/.DirIcon"
-
-APPIMAGETOOL="${APPIMAGETOOL:-$(command -v appimagetool || true)}"
-if [ -z "$APPIMAGETOOL" ]; then
-  echo "    appimagetool not on PATH; downloading"
-  APPIMAGETOOL="$DIST/appimagetool"
-  curl -fsSL -o "$APPIMAGETOOL" \
-    https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-  chmod +x "$APPIMAGETOOL"
-fi
-
-APPIMAGE_OUT="$DIST/${DISPLAY_STEM}-linux-amd64.AppImage"
-ARCH=x86_64 "$APPIMAGETOOL" --appimage-extract-and-run "$APPDIR" \
-  "$APPIMAGE_OUT" >/dev/null
-
 # --- Linux .deb --------------------------------------------------------------
 if command -v dpkg-deb >/dev/null 2>&1; then
   echo "==> Building Debian package"
@@ -146,8 +119,7 @@ fi
 
 # --- Tidy up intermediate artifacts ------------------------------------------
 rm -f "$DIST/$APP-darwin-amd64" "$DIST/$APP-darwin-arm64" "$DIST/$APP-darwin-universal"
-rm -rf "$APPDIR" "$APP_BUNDLE"
-rm -f "$DIST/appimagetool"
+rm -rf "$APP_BUNDLE"
 
 echo
 echo "==> Done. Artifacts in $DIST/:"
