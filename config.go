@@ -11,12 +11,24 @@ import (
 )
 
 type Config struct {
+	Mode           string         `json:"mode"` // "balls" or "field"
 	Background     string         `json:"background"`
 	BallSize       float64        `json:"ballSize"`
 	Speed          float64        `json:"speed"`          // 0-10 scale; 10 = 1 cycle/sec, 0 = paused
 	LingerSec      float64        `json:"lingerSec"`      // dwell at each extreme of a linear sweep; 0 = off
 	LingerLeadFrac float64        `json:"lingerLeadFrac"` // how far the size pulse leads into adjacent motion, as a fraction of min(L, half); 0 = pulse confined to dwell
+	Field          FieldConfig    `json:"field"`
 	Playlist       []PlaylistItem `json:"playlist"`
+}
+
+type FieldConfig struct {
+	Speed            float64 `json:"speed"`            // 0-10 scale; controls intro pacing and steady-state flow
+	Palette          string  `json:"palette"`          // named preset: Happy / Calm / Neon / Fire / Ocean
+	Shape            string  `json:"shape"`            // circles / squares / diamonds / stripes / spiral / star / random
+	ShuffleColors    bool    `json:"shuffleColors"`    // permute palette order each time the seed is rolled
+	RandomSeed       int     `json:"randomSeed"`       // shared seed for random shape + palette shuffle; click "regenerate" to roll a new one
+	Loop             bool    `json:"loop"`             // cycle: resolve to HD, hold, de-resolve back, repeat (re-rolling random/shuffle seeds each cycle)
+	ShapeDurationSec float64 `json:"shapeDurationSec"` // total length of one resolve-hold-deresolve cycle when looping
 }
 
 type PlaylistItem struct {
@@ -29,10 +41,17 @@ type PlaylistItem struct {
 
 func defaultConfig() Config {
 	return Config{
+		Mode:           "balls",
 		Background:     "#0e0e16",
 		BallSize:       80,
 		Speed:          2,
 		LingerLeadFrac: 0.35,
+		Field: FieldConfig{
+			Speed:            2,
+			Palette:          "Happy",
+			Shape:            "circles",
+			ShapeDurationSec: 12,
+		},
 		Playlist: []PlaylistItem{
 			{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},
 			{Pattern: "v-sweep", Color: "#f9e2af", Repeats: 3},
@@ -77,7 +96,7 @@ func (s *configStore) load() error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", s.path, err)
 	}
-	var cfg Config
+	cfg := defaultConfig()
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return fmt.Errorf("parse %s: %w", s.path, err)
 	}
