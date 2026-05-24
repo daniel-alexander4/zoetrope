@@ -44,8 +44,10 @@ html, body {
 #transport {
   pointer-events: auto;
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  max-width: calc(100vw - 32px);
   background: rgba(30, 30, 46, 0.85);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -53,6 +55,87 @@ html, body {
   border-radius: 12px;
   padding: 8px 12px;
 }
+
+#transport .ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--subtext);
+}
+
+#transport .ctl.checkbox {
+  cursor: pointer;
+}
+
+#transport .ctl input[type="number"] {
+  width: 56px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+#transport .ctl select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+#transport .regen {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#transport .regen:hover {
+  background: var(--overlay);
+}
+
+#transport .tabs {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--base);
+  border: 1px solid var(--overlay);
+  border-radius: 8px;
+  padding: 2px;
+  margin-right: 4px;
+}
+
+#transport .tab {
+  background: transparent;
+  color: var(--subtext);
+  border: 0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 4px 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+#transport .tab:hover {
+  color: var(--text);
+  background: var(--overlay);
+}
+
+#transport .tab.active {
+  background: var(--accent);
+  color: var(--base);
+  font-weight: 600;
+}
+
+body.mode-balls .field-only { display: none !important; }
+body.mode-field .balls-only { display: none !important; }
 
 #transport button {
   background: var(--surface);
@@ -181,6 +264,33 @@ html, body {
 #editor .group-label {
   font-weight: 600;
   color: var(--text);
+}
+
+#editor .regen {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+#editor .regen:hover {
+  background: var(--overlay);
+}
+
+#editor label.checkbox {
+  gap: 4px;
+  color: var(--subtext);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#editor label.checkbox input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
 }
 
 #editor .global input[type="number"] {
@@ -380,4 +490,352 @@ html, body {
 .item[data-pattern="diag-urbl"] .angle-wrap,
 .item[data-pattern="bounce"] .direction-wrap {
   display: none;
+}
+
+/* ---- Network modes -------------------------------------------------- */
+
+#manager-view,
+#client-status { display: none; }
+body.nmode-manager #stage,
+body.nmode-manager #hud,
+body.nmode-manager #editor { display: none; }
+body.nmode-manager #manager-view { display: flex; }
+body.nmode-client #editor { display: none; }
+body.nmode-client #hud { pointer-events: none; opacity: 0.0; }
+body.nmode-client #client-status { display: flex; }
+
+/* Network block inside the editor (visible only in standalone). */
+.network-block {
+  padding: 12px 16px;
+  border-top: 1px solid var(--overlay);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+body:not(.nmode-standalone) .network-block { display: none; }
+.network-block h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--subtext);
+  font-weight: 500;
+  flex: 1;
+}
+.network-block button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.network-block button:hover { background: var(--overlay); }
+
+/* Manager view */
+#manager-view {
+  position: fixed;
+  inset: 0;
+  background: var(--base);
+  color: var(--text);
+  padding: 24px;
+  overflow: auto;
+  flex-direction: column;
+  gap: 16px;
+}
+#manager-view > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--overlay);
+}
+#manager-view > header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+#btn-stop-hosting {
+  background: var(--danger);
+  color: var(--base);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#identity-panel,
+#sessions {
+  background: var(--surface);
+  border: 1px solid var(--overlay);
+  border-radius: 8px;
+  padding: 16px;
+}
+#identity-panel h3,
+#sessions > header h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: var(--subtext);
+  font-weight: 500;
+}
+.identity-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.identity-label {
+  color: var(--subtext);
+  min-width: 130px;
+}
+#identity-panel code,
+.identity-row code {
+  background: var(--base);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+}
+#sessions > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+#btn-new-session {
+  background: var(--accent);
+  color: var(--base);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+#sessions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.session {
+  background: var(--base);
+  border: 1px solid var(--overlay);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.session-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.session-label {
+  flex: 1;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+.session-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--overlay);
+  color: var(--subtext);
+}
+.session-status[data-status="connected"] {
+  background: color-mix(in oklab, #a6e3a1 30%, transparent);
+  color: #a6e3a1;
+}
+.session-remove {
+  background: transparent;
+  color: var(--danger);
+  border: 0;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 6px;
+  line-height: 1;
+}
+.session-remove:hover { color: #fff; }
+.session-url-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.session-url {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  resize: none;
+  height: 56px;
+}
+.session-copy {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.session-copy:hover { background: var(--overlay); }
+.session-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.session-controls button,
+.session-picker {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.session-controls button:hover { background: var(--overlay); }
+.session-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.session-detail {
+  font-size: 11px;
+  color: var(--subtext);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* Client-mode status pill */
+#client-status {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  background: rgba(17, 17, 27, 0.85);
+  border: 1px solid var(--overlay);
+  border-radius: 8px;
+  padding: 8px 12px;
+  gap: 10px;
+  align-items: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 50;
+}
+#client-pill {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--overlay);
+  color: var(--subtext);
+}
+#client-pill[data-state="connected"] {
+  background: color-mix(in oklab, #a6e3a1 30%, transparent);
+  color: #a6e3a1;
+}
+#client-pill[data-state="connecting"],
+#client-pill[data-state="reconnecting"] {
+  background: color-mix(in oklab, var(--accent) 30%, transparent);
+  color: var(--accent);
+}
+#client-pill[data-state="disconnected"],
+#client-pill[data-state="error"] {
+  background: color-mix(in oklab, var(--danger) 30%, transparent);
+  color: var(--danger);
+}
+#btn-leave {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#btn-leave:hover { background: var(--overlay); }
+
+/* Host / Join dialogs */
+.dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.dialog.open { display: flex; }
+.dialog-card {
+  background: var(--surface);
+  border: 1px solid var(--overlay);
+  border-radius: 10px;
+  padding: 20px;
+  width: min(480px, calc(100vw - 32px));
+}
+.dialog-card h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+}
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--subtext);
+}
+.dialog-field input,
+.dialog-field textarea {
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.dialog-field textarea {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  resize: vertical;
+}
+.dialog-hint {
+  font-size: 11px;
+  color: var(--subtext);
+  opacity: 0.7;
+}
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.dialog-actions button {
+  background: var(--accent);
+  color: var(--base);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dialog-actions button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--overlay);
+}
+.dialog-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin-top: 8px;
+  min-height: 1em;
 }

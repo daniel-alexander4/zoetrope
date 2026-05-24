@@ -36,7 +36,9 @@ func main() {
 	}
 
 	hb := &heartbeat{}
-	mux, err := newRouter(store, hb)
+	bus := newEventBus()
+	modes := newModeState(appName, bus)
+	mux, err := newRouter(store, hb, bus, modes)
 	if err != nil {
 		log.Fatalf("router: %v", err)
 	}
@@ -77,7 +79,6 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-	const heartbeatTimeout = 90 * time.Second
 	watchdogQuit := make(chan struct{})
 	watchdogStop := make(chan struct{})
 	defer close(watchdogStop)
@@ -87,7 +88,7 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				if hb.Stale(heartbeatTimeout) {
+				if modes.ShouldShutdown(hb) {
 					close(watchdogQuit)
 					return
 				}
@@ -104,9 +105,11 @@ func main() {
 		}
 	case sig := <-sigCh:
 		log.Printf("received %s, shutting down", sig)
+		modes.Standalone()
 		shutdownServer(srv)
 	case <-watchdogQuit:
-		log.Printf("no heartbeat for %v, shutting down", heartbeatTimeout)
+		log.Printf("idle shutdown (mode=%s)", modes.Mode())
+		modes.Standalone()
 		shutdownServer(srv)
 	}
 }

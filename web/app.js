@@ -35,7 +35,27 @@
     lastFrameMs: 0,
     bounceStart: { x: 0, y: 0 },
     dirty: false,
+    field: { t: 0, introT: 0, loopT: 0 },
   };
+
+  // ---- Field palettes ---------------------------------------------------
+  // Each palette is a cyclic list of colors. The last entry MUST equal the
+  // first so interpolation wraps seamlessly.
+  const FIELD_PALETTES = {
+    Happy: ['#fde68a', '#fb7185', '#f472b6', '#a78bfa', '#60a5fa', '#34d399', '#fde68a'],
+    Calm:  ['#1e3a8a', '#3b82f6', '#06b6d4', '#10b981', '#a7f3d0', '#3b82f6', '#1e3a8a'],
+    Neon:  ['#ff006e', '#fb5607', '#ffbe0b', '#8338ec', '#3a86ff', '#ff006e'],
+    Fire:  ['#3b0a0a', '#991b1b', '#ea580c', '#f59e0b', '#fde047', '#fff7ed', '#3b0a0a'],
+    Ocean: ['#0c4a6e', '#0369a1', '#0ea5e9', '#67e8f9', '#cffafe', '#0c4a6e'],
+  };
+
+  function hexToRgb(hex) {
+    const v = parseInt(hex.slice(1), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+  const FIELD_PALETTES_RGB = Object.fromEntries(
+    Object.entries(FIELD_PALETTES).map(([k, v]) => [k, v.map(hexToRgb)])
+  );
 
   const canvas = document.getElementById('stage');
   const ctx = canvas.getContext('2d');
@@ -286,17 +306,249 @@
     ctx.fill();
   }
 
+  // ---- Field (psychedelic) renderer -------------------------------------
+  // Offscreen low-res canvas that we draw the field into, then upscale to
+  // the main canvas. Resolution grows over the intro phase so it visibly
+  // "resolves" from chunky blocks to a smooth HD gradient.
+  const FIELD_RES_STAGES = [8, 16, 32, 64, 128, 320];
+  const FIELD_INTRO_SEC = 1.0; // intro duration at normalized speed 1.0 (= speed 10)
+  // Loop cycle: 0..LOOP_RES_END resolving, LOOP_RES_END..LOOP_HOLD_END HD hold,
+  // LOOP_HOLD_END..1.0 de-resolving. Fractions are of one shapeDurationSec cycle.
+  const LOOP_RES_END = 0.15;
+  const LOOP_HOLD_END = 0.85;
+
+  // Seeded PRNG so a given randomSeed always produces the same random shape.
+  function mulberry32(seed) {
+    let a = seed | 0;
+    return function () {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  let cachedShufflePal = null;
+  let cachedShuffleKey = null;
+  function resolvePalette() {
+    const palName = state.config.field?.palette || 'Happy';
+    const pal = FIELD_PALETTES_RGB[palName] || FIELD_PALETTES_RGB.Happy;
+    if (!state.config.field?.shuffleColors) return pal;
+    const seed = state.config.field?.randomSeed | 0;
+    const key = palName + ':' + seed;
+    if (cachedShuffleKey === key && cachedShufflePal) return cachedShufflePal;
+    // Drop wrap duplicate, shuffle inner colors with a seed-derived stream,
+    // then re-append the new first color so cyclic interpolation still wraps.
+    const inner = pal.slice(0, -1);
+    const rng = mulberry32((seed * 0x9E3779B1) | 0 || 1);
+    for (let i = inner.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const tmp = inner[i]; inner[i] = inner[j]; inner[j] = tmp;
+    }
+    inner.push(inner[0]);
+    cachedShufflePal = inner;
+    cachedShuffleKey = key;
+    return cachedShufflePal;
+  }
+
+  let cachedRandomSeed = null;
+  let cachedRandomResolved = null;
+  function resolveShape() {
+    const shape = state.config.field?.shape || 'circles';
+    if (shape !== 'random') return { shape, params: {} };
+    const seed = state.config.field?.randomSeed | 0;
+    if (cachedRandomSeed === seed && cachedRandomResolved) return cachedRandomResolved;
+    // "Random" generates a novel pattern from the seed by sampling parameters
+    // for a multi-term trig interference field — every seed yields a distinct
+    // shape, not a re-selection of the geometric presets.
+    const rng = mulberry32(seed || 1);
+    cachedRandomResolved = {
+      shape: 'random',
+      params: {
+        rotation: rng() * Math.PI,
+        a: 2 + rng() * 6,        // x freq term 1
+        b: 2 + rng() * 6,        // y freq term 1
+        c: 2 + rng() * 6,        // x freq term 2
+        d: 2 + rng() * 6,        // y freq term 2
+        e: rng() * TAU,          // phase 1
+        f: rng() * TAU,          // phase 2
+        radialFreq: 0.5 + rng() * 2.5, // radial-quadratic term frequency
+        scale: 0.6 + rng() * 1.4,      // overall canvas → pattern scale
+      },
+    };
+    cachedRandomSeed = seed;
+    return cachedRandomResolved;
+  }
+  let fieldCanvas = null;
+  let fieldCtx = null;
+  let fieldImageData = null;
+
+  function ensureFieldOffscreen(w, h) {
+    if (!fieldCanvas) {
+      fieldCanvas = document.createElement('canvas');
+      fieldCtx = fieldCanvas.getContext('2d');
+    }
+    if (fieldCanvas.width !== w || fieldCanvas.height !== h) {
+      fieldCanvas.width = w;
+      fieldCanvas.height = h;
+      fieldImageData = fieldCtx.createImageData(w, h);
+    }
+  }
+
+  function advanceField(dt) {
+    const f = state.config.field || {};
+    const speed = Math.max(0, f.speed ?? 3) / 10;
+    state.field.t += dt * speed;
+
+    if (f.loop) {
+      const dur = Math.max(3, f.shapeDurationSec ?? 12);
+      state.field.loopT = (state.field.loopT || 0) + dt / dur;
+      while (state.field.loopT >= 1) {
+        state.field.loopT -= 1;
+        // New cycle — reroll the seed so random / shuffle vary.
+        // (Fixed shapes like 'circles' simply re-resolve identically.)
+        const usesSeed = f.shape === 'random' || f.shuffleColors;
+        if (usesSeed) {
+          state.config.field.randomSeed = (Math.random() * 0x7fffffff) | 0;
+        }
+      }
+      const lt = state.field.loopT;
+      if (lt < LOOP_RES_END) {
+        state.field.introT = lt / LOOP_RES_END;
+      } else if (lt < LOOP_HOLD_END) {
+        state.field.introT = 1;
+      } else {
+        state.field.introT = 1 - (lt - LOOP_HOLD_END) / (1 - LOOP_HOLD_END);
+      }
+    } else if (state.field.introT < 1) {
+      const introRate = Math.max(0.05, speed) / FIELD_INTRO_SEC;
+      state.field.introT = Math.min(1, state.field.introT + dt * introRate);
+    }
+  }
+
+  function renderField() {
+    const vp = viewport();
+    const stages = FIELD_RES_STAGES.length;
+    const stageIdx = Math.min(stages - 1, Math.floor(state.field.introT * stages));
+    const isHD = stageIdx === stages - 1;
+    const resW = FIELD_RES_STAGES[stageIdx];
+    const aspect = vp.h / vp.w;
+    const resH = Math.max(2, Math.round(resW * aspect));
+    ensureFieldOffscreen(resW, resH);
+
+    const pal = resolvePalette();
+    const palLast = pal.length - 1;
+
+    const cx = (resW - 1) / 2;
+    const cy = (resH - 1) / 2;
+    const maxDist = Math.sqrt(cx * cx + cy * cy);
+    const bands = 2.5; // visible color bands across the radius
+    const invWavelength = bands / maxDist;
+    const t = state.field.t;
+
+    const { shape, params } = resolveShape();
+    const rot = params.rotation || 0;
+    const cosR = Math.cos(rot), sinR = Math.sin(rot);
+    const arms = params.arms ?? 2;
+    const tightness = params.tightness ?? 1;
+    const points = params.points ?? 5;
+    const sharpness = params.sharpness ?? 0.5;
+    const spiralK = arms * tightness * maxDist / TAU;
+
+    // Random (trig interference) precomputes.
+    const rA = params.a ?? 3;
+    const rB = params.b ?? 3;
+    const rC = params.c ?? 3;
+    const rD = params.d ?? 3;
+    const rE = params.e ?? 0;
+    const rF = params.f ?? 0;
+    const rRadial = params.radialFreq ?? 1;
+    const rScale = params.scale ?? 1;
+    const rNormK = rScale * 4 / maxDist; // maps pixel coords to roughly [-2, +2]
+
+    const data = fieldImageData.data;
+    let p = 0;
+    for (let y = 0; y < resH; y++) {
+      const dy = y - cy;
+      for (let x = 0; x < resW; x++) {
+        const dx = x - cx;
+        // Rotate the sample point so each shape can pick up an arbitrary
+        // orientation (used by the random shape).
+        const rx = rot ? cosR * dx + sinR * dy : dx;
+        const ry = rot ? -sinR * dx + cosR * dy : dy;
+        let metric;
+        switch (shape) {
+          case 'squares':  metric = Math.max(Math.abs(rx), Math.abs(ry)); break;
+          case 'diamonds': metric = Math.abs(rx) + Math.abs(ry); break;
+          case 'stripes':  metric = Math.abs(rx); break;
+          case 'spiral': {
+            const r = Math.sqrt(rx * rx + ry * ry);
+            metric = r + Math.atan2(ry, rx) * spiralK;
+            break;
+          }
+          case 'star': {
+            const r = Math.sqrt(rx * rx + ry * ry);
+            metric = r * (1 + sharpness * Math.cos(points * Math.atan2(ry, rx)));
+            break;
+          }
+          case 'random': {
+            const px = rx * rNormK;
+            const py = ry * rNormK;
+            const r2 = px * px + py * py;
+            let m = Math.sin(rA * px + Math.cos(rB * py + rE))
+                  + Math.cos(rC * px + Math.sin(rD * py + rF))
+                  + Math.sin(rRadial * r2) * 0.6;
+            // m is roughly in [-2.6, 2.6]; shift+scale to a maxDist-ish range
+            metric = (m + 2.6) * maxDist / 10.4;
+            break;
+          }
+          default: metric = Math.sqrt(rx * rx + ry * ry); // circles
+        }
+        let phase = t - metric * invWavelength;
+        phase = phase - Math.floor(phase); // wrap to [0,1)
+        const fIdx = phase * palLast;
+        const i = fIdx | 0;
+        const f = fIdx - i;
+        const a = pal[i];
+        const b = pal[i + 1];
+        data[p++] = a[0] + (b[0] - a[0]) * f;
+        data[p++] = a[1] + (b[1] - a[1]) * f;
+        data[p++] = a[2] + (b[2] - a[2]) * f;
+        data[p++] = 255;
+      }
+    }
+    fieldCtx.putImageData(fieldImageData, 0, 0);
+
+    ctx.imageSmoothingEnabled = isHD;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, vp.w, vp.h);
+    ctx.drawImage(fieldCanvas, 0, 0, vp.w, vp.h);
+  }
+
+  function resetField() {
+    state.field.t = 0;
+    state.field.introT = 0;
+    state.field.loopT = 0;
+  }
+
   let lastHighlightIdx = -1;
   function frame(nowMs) {
     if (!state.lastFrameMs) state.lastFrameMs = nowMs;
     const dt = (nowMs - state.lastFrameMs) / 1000;
     state.lastFrameMs = nowMs;
-    if (state.playing) advance(dt);
-    render();
-    updateNowPlaying();
-    if (state.itemIdx !== lastHighlightIdx) {
-      updatePlayingHighlight();
-      lastHighlightIdx = state.itemIdx;
+    const mode = state.config?.mode || 'balls';
+    if (mode === 'field') {
+      if (state.playing) advanceField(dt);
+      renderField();
+    } else {
+      if (state.playing) advance(dt);
+      render();
+      updateNowPlaying();
+      if (state.itemIdx !== lastHighlightIdx) {
+        updatePlayingHighlight();
+        lastHighlightIdx = state.itemIdx;
+      }
     }
     requestAnimationFrame(frame);
   }
@@ -312,7 +564,6 @@
     setPlayIcon('▶');
   }
   function togglePlay() { state.playing ? pause() : play(); }
-  function stop() { pause(); seekPlaylistStart(); }
   function seekPlaylistStart() {
     state.lastFrameMs = 0;
     enterItem(0);
@@ -350,6 +601,35 @@
   function updatePlayingHighlight() {
     const lis = document.querySelectorAll('#playlist .item');
     lis.forEach((li, i) => li.classList.toggle('playing', i === state.itemIdx));
+  }
+
+  // ---- Dispatch ---------------------------------------------------------
+  // Single entry point for transport actions. Local UI handlers and (when
+  // present) inbound network verbs both route through here, so standalone
+  // and client modes share one mutation path.
+
+  function dispatch(verb) {
+    switch (verb.type) {
+      case 'play':         play(); break;
+      case 'pause':        pause(); break;
+      case 'resume':       play(); break;
+      case 'toggle':       togglePlay(); break;
+      case 'advance':      nextPattern(); break;
+      case 'back':         seekPatternStart(); break;
+      case 'reset':        seekPlaylistStart(); break;
+      case 'stop':         pause(); seekPlaylistStart(); break;
+      case 'hold':         /* IEMT only: freeze at current position */ break;
+      case 'release':      /* IEMT only: resume auto-advance */ break;
+      case 'jump':
+      case 'set-sequence':
+        if (Number.isInteger(verb.index)) jumpToItem(verb.index);
+        break;
+      default:
+        console.warn('unknown verb:', verb);
+    }
+    // In client mode, push the resulting state back so the manager UI
+    // reflects what the ball is actually doing.
+    if (state.nmode === 'client') schedulePushClientState();
   }
 
   // ---- Editor -----------------------------------------------------------
@@ -397,7 +677,7 @@
       });
       titleBar.addEventListener('click', e => {
         if (e.target.closest('.del')) return;  // delete handles its own click
-        jumpToItem(+node.dataset.index);
+        dispatch({ type: 'jump', index: +node.dataset.index });
       });
 
       node.addEventListener('dragstart', e => {
@@ -517,7 +797,64 @@
     document.getElementById('speed-input').value = state.config.speed;
     document.getElementById('linger-input').value = state.config.lingerSec;
     document.getElementById('linger-lead-input').value = state.config.lingerLeadFrac ?? 0;
+    document.getElementById('field-speed-input').value = state.config.field.speed ?? 3;
+    document.getElementById('field-palette-input').value = state.config.field.palette || 'Happy';
+    document.getElementById('field-shape-input').value = state.config.field.shape || 'circles';
+    document.getElementById('field-shuffle-input').checked = !!state.config.field.shuffleColors;
+    document.getElementById('field-loop-input').checked = !!state.config.field.loop;
+    document.getElementById('field-duration-input').value = state.config.field.shapeDurationSec ?? 12;
+    updateRegenVisibility();
+    applyMode(state.config.mode || 'balls');
     renderEditor();
+  }
+
+  function updateRegenVisibility() {
+    const f = state.config.field || {};
+    const usesRandom = f.shape === 'random' || !!f.shuffleColors;
+    document.getElementById('field-shape-regen').style.display = usesRandom ? '' : 'none';
+  }
+
+  function ensureRandomSeed() {
+    if (!state.config.field.randomSeed) {
+      state.config.field.randomSeed = (Math.random() * 0x7fffffff) | 0;
+    }
+  }
+
+  function applyMode(mode) {
+    state.config.mode = mode;
+    document.body.classList.toggle('mode-balls', mode === 'balls');
+    document.body.classList.toggle('mode-field', mode === 'field');
+    document.getElementById('tab-balls').classList.toggle('active', mode === 'balls');
+    document.getElementById('tab-field').classList.toggle('active', mode === 'field');
+    if (mode === 'field') {
+      resetField();
+      // Drawer holds only balls-mode content now; close it on the way in.
+      document.getElementById('editor').classList.add('hidden');
+    }
+  }
+
+  // Quiet auto-save used by HUD field controls — no drawer/HUD UI side
+  // effects, debounced so rapid input changes coalesce.
+  let autoSaveTimer = null;
+  function scheduleAutoSave() {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(autoSave, 300);
+  }
+  async function autoSave() {
+    try {
+      const r = await fetch('/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Zoetrope': '1' },
+        body: JSON.stringify(state.config),
+      });
+      if (!r.ok) {
+        console.warn('autosave failed:', r.status);
+        return;
+      }
+      markClean();
+    } catch (err) {
+      console.warn('autosave failed:', err);
+    }
   }
 
   async function saveConfig() {
@@ -546,11 +883,10 @@
 
   // ---- Wiring -----------------------------------------------------------
 
-  document.getElementById('btn-pl-start').addEventListener('click', seekPlaylistStart);
-  document.getElementById('btn-pat-start').addEventListener('click', seekPatternStart);
-  document.getElementById('btn-play').addEventListener('click', togglePlay);
-  document.getElementById('btn-stop').addEventListener('click', stop);
-  document.getElementById('btn-next').addEventListener('click', nextPattern);
+  document.getElementById('btn-pl-start').addEventListener('click', () => dispatch({ type: 'reset' }));
+  document.getElementById('btn-pat-start').addEventListener('click', () => dispatch({ type: 'back' }));
+  document.getElementById('btn-play').addEventListener('click', () => dispatch({ type: 'toggle' }));
+  document.getElementById('btn-next').addEventListener('click', () => dispatch({ type: 'advance' }));
   document.getElementById('speed').addEventListener('change', e => {
     state.speedMul = +e.target.value;
   });
@@ -577,8 +913,15 @@
     editor.addEventListener('mouseleave', () => {
       clearTimeout(closeTimer);
       if (state.dirty) return;
+      // Don't arm the close timer while a playlist item is mid-drag. HTML5
+      // drag-and-drop can fire mouseleave on the editor as the drag preview
+      // crosses its boundary, and sliding the drawer shut mid-drag kills the
+      // drop targets and aborts the reorder.
+      if (document.querySelector('#playlist .item.dragging')) return;
       closeTimer = setTimeout(() => {
-        if (!state.dirty) editor.classList.add('hidden');
+        if (state.dirty) return;
+        if (document.querySelector('#playlist .item.dragging')) return;
+        editor.classList.add('hidden');
       }, 500);
     });
     editor.addEventListener('mouseenter', () => {
@@ -613,6 +956,68 @@
     state.config.lingerLeadFrac = +e.target.value;
     markDirty();
   });
+  document.getElementById('tab-balls').addEventListener('click', () => {
+    if (state.config.mode === 'balls') return;
+    applyMode('balls');
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('tab-field').addEventListener('click', () => {
+    if (state.config.mode === 'field') return;
+    applyMode('field');
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('field-speed-input').addEventListener('input', e => {
+    state.config.field.speed = +e.target.value;
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('field-palette-input').addEventListener('change', e => {
+    state.config.field.palette = e.target.value;
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('field-shape-input').addEventListener('change', e => {
+    state.config.field.shape = e.target.value;
+    if (e.target.value === 'random') ensureRandomSeed();
+    updateRegenVisibility();
+    resetField();
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('field-shuffle-input').addEventListener('change', e => {
+    state.config.field.shuffleColors = e.target.checked;
+    if (e.target.checked) ensureRandomSeed();
+    updateRegenVisibility();
+    resetField();
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('field-shape-regen').addEventListener('click', () => {
+    state.config.field.randomSeed = (Math.random() * 0x7fffffff) | 0;
+    resetField();
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('field-loop-input').addEventListener('change', e => {
+    state.config.field.loop = e.target.checked;
+    if (e.target.checked) {
+      // Pick up at the start of the HD hold so toggling on doesn't flash
+      // back to low-def if we were already resolved.
+      state.field.loopT = LOOP_RES_END;
+    } else {
+      // Lock in fully-resolved HD on the way out of loop mode.
+      state.field.introT = 1;
+    }
+    markDirty();
+    scheduleAutoSave();
+  });
+  document.getElementById('field-duration-input').addEventListener('input', e => {
+    state.config.field.shapeDurationSec = +e.target.value;
+    markDirty();
+    scheduleAutoSave();
+  });
 
   // ---- Auto-hide HUD when mouse is idle --------------------------------
   const hud = document.getElementById('hud');
@@ -642,10 +1047,10 @@
   document.addEventListener('keydown', e => {
     showHud();
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    if (e.code === 'ArrowLeft') seekPatternStart();
-    if (e.code === 'ArrowRight') nextPattern();
-    if (e.code === 'Home') seekPlaylistStart();
+    if (e.code === 'Space') { e.preventDefault(); dispatch({ type: 'toggle' }); }
+    if (e.code === 'ArrowLeft') dispatch({ type: 'back' });
+    if (e.code === 'ArrowRight') dispatch({ type: 'advance' });
+    if (e.code === 'Home') dispatch({ type: 'reset' });
     if (e.code === 'KeyF') toggleFullscreen();
   });
 
@@ -665,10 +1070,340 @@
     .then(v => { document.getElementById('version').textContent = v.trim(); })
     .catch(() => {});
 
+  // ---- Network mode (standalone / manager / client) -------------------
+
+  state.nmode = 'standalone';
+  state.sessions = new Map(); // fp → { node, snap }
+  let clientStatePushTimer = null;
+
+  async function csrfFetch(path, options = {}) {
+    const headers = { ...(options.headers || {}), 'X-Zoetrope': '1' };
+    return fetch(path, { ...options, headers });
+  }
+
+  function applyNetworkMode(snap) {
+    state.nmode = snap.mode || 'standalone';
+    document.body.classList.remove('nmode-standalone', 'nmode-manager', 'nmode-client');
+    document.body.classList.add('nmode-' + state.nmode);
+
+    if (state.nmode === 'manager') {
+      document.getElementById('practitioner-fp').textContent = snap.practitioner_fp || '—';
+      document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
+      renderSessions(snap.sessions || []);
+    } else if (state.nmode === 'client') {
+      setClientPill('connected');
+      pushClientHello();
+      pushClientSequences();
+      pushClientState();
+    } else {
+      state.sessions.clear();
+      const list = document.getElementById('sessions-list');
+      if (list) list.innerHTML = '';
+    }
+  }
+
+  function setClientPill(status) {
+    const pill = document.getElementById('client-pill');
+    pill.dataset.state = status;
+    pill.textContent = ({
+      connected: 'Connected',
+      connecting: 'Connecting…',
+      reconnecting: 'Reconnecting…',
+      disconnected: 'Disconnected',
+      error: 'Connection error',
+    }[status]) || status;
+  }
+
+  function renderSessions(sessions) {
+    const list = document.getElementById('sessions-list');
+    list.innerHTML = '';
+    state.sessions.clear();
+    for (const sess of sessions) {
+      addSessionToList(sess);
+    }
+  }
+
+  function addSessionToList(snap, url) {
+    if (state.sessions.has(snap.fingerprint)) return;
+    const list = document.getElementById('sessions-list');
+    const tmpl = document.getElementById('session-template');
+    const node = tmpl.content.firstElementChild.cloneNode(true);
+    node.dataset.fp = snap.fingerprint;
+    node.querySelector('.session-label').textContent = snap.label || snap.fingerprint.slice(0, 12);
+    const statusEl = node.querySelector('.session-status');
+    statusEl.textContent = snap.connected ? 'connected' : 'waiting';
+    statusEl.dataset.status = snap.connected ? 'connected' : 'waiting';
+    if (url) node.querySelector('.session-url').value = url;
+    wireSessionNode(node, snap.fingerprint);
+    list.appendChild(node);
+    state.sessions.set(snap.fingerprint, { node, snap });
+  }
+
+  function removeSessionFromList(fp) {
+    const entry = state.sessions.get(fp);
+    if (!entry) return;
+    entry.node.remove();
+    state.sessions.delete(fp);
+  }
+
+  function updateSessionStatus(fp, status) {
+    const entry = state.sessions.get(fp);
+    if (!entry) return;
+    const el = entry.node.querySelector('.session-status');
+    el.textContent = status;
+    el.dataset.status = status;
+  }
+
+  function setSessionLabel(fp, label) {
+    const entry = state.sessions.get(fp);
+    if (!entry || !label) return;
+    entry.node.querySelector('.session-label').textContent = label;
+  }
+
+  function populateSessionPicker(fp, payload) {
+    const entry = state.sessions.get(fp);
+    if (!entry || !payload?.sequences) return;
+    const sel = entry.node.querySelector('.session-picker');
+    sel.innerHTML = '<option value="">Set sequence…</option>';
+    for (const seq of payload.sequences) {
+      const opt = document.createElement('option');
+      opt.value = String(seq.index);
+      opt.textContent = `${seq.index + 1}. ${seq.label}`;
+      sel.appendChild(opt);
+    }
+  }
+
+  function updateSessionDetail(fp, payload) {
+    const entry = state.sessions.get(fp);
+    if (!entry || !payload) return;
+    const playing = payload.playing ? '▶' : '⏸';
+    const idx = payload.item_idx ?? 0;
+    const rep = payload.repeat_idx ?? 0;
+    const pat = payload.pattern || '?';
+    entry.node.querySelector('.session-detail').textContent =
+      `${playing} item ${idx + 1}, rep ${rep + 1}, pattern ${pat}`;
+  }
+
+  function wireSessionNode(node, fp) {
+    node.querySelector('.session-remove').addEventListener('click', () => {
+      csrfFetch('/api/sessions/' + fp, { method: 'DELETE' }).catch(()=>{});
+    });
+    node.querySelector('.session-copy').addEventListener('click', () => {
+      const ta = node.querySelector('.session-url');
+      if (!ta.value) return;
+      ta.select();
+      navigator.clipboard.writeText(ta.value).catch(()=>{});
+    });
+    node.querySelectorAll('.session-controls button[data-verb]').forEach(btn => {
+      btn.addEventListener('click', () => sendSessionVerb(fp, { type: btn.dataset.verb }));
+    });
+    node.querySelector('.session-picker').addEventListener('change', e => {
+      if (e.target.value === '') return;
+      const idx = parseInt(e.target.value, 10);
+      if (Number.isInteger(idx)) sendSessionVerb(fp, { type: 'set-sequence', index: idx });
+      e.target.value = '';
+    });
+  }
+
+  async function sendSessionVerb(fp, verb) {
+    try {
+      const r = await csrfFetch('/api/sessions/' + fp + '/verb', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(verb),
+      });
+      if (!r.ok) console.warn('verb', r.status, await r.text());
+    } catch (err) {
+      console.error('sendSessionVerb:', err);
+    }
+  }
+
+  // ---- Client-side pushes ---------------------------------------------
+
+  function schedulePushClientState() {
+    if (state.nmode !== 'client') return;
+    if (clientStatePushTimer) clearTimeout(clientStatePushTimer);
+    clientStatePushTimer = setTimeout(pushClientState, 100);
+  }
+
+  function pushClientHello() {
+    return csrfFetch('/api/network/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'hello' }),
+    }).catch(()=>{});
+  }
+
+  function pushClientSequences() {
+    const seqs = (state.config?.playlist || []).map((item, idx) => ({
+      index: idx,
+      pattern: item.pattern,
+      label: PATTERN_LABELS[item.pattern] || item.pattern,
+    }));
+    return csrfFetch('/api/network/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'sequences', sequences: seqs }),
+    }).catch(()=>{});
+  }
+
+  function pushClientState() {
+    const item = currentItem();
+    return csrfFetch('/api/network/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'state',
+        playing: state.playing,
+        item_idx: state.itemIdx,
+        repeat_idx: state.repeatIdx,
+        pattern: item?.pattern || null,
+      }),
+    }).catch(()=>{});
+  }
+
+  // ---- Mode actions ---------------------------------------------------
+
+  async function networkHost(endpoint, listenAddr) {
+    const r = await csrfFetch('/api/mode/host', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint, listen_addr: listenAddr || '' }),
+    });
+    if (!r.ok) throw new Error((await r.text()).trim() || 'host failed');
+  }
+
+  async function networkJoin(url, label) {
+    const r = await csrfFetch('/api/mode/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, label: label || '' }),
+    });
+    if (!r.ok) throw new Error((await r.text()).trim() || 'join failed');
+  }
+
+  async function networkStandalone() {
+    await csrfFetch('/api/mode/standalone', { method: 'POST' }).catch(()=>{});
+  }
+
+  async function networkNewSession() {
+    const r = await csrfFetch('/api/sessions', { method: 'POST' });
+    if (!r.ok) throw new Error((await r.text()).trim() || 'new session failed');
+    return r.json();
+  }
+
+  // ---- Dialog wiring --------------------------------------------------
+
+  const hostDialog = document.getElementById('host-dialog');
+  document.getElementById('btn-host').addEventListener('click', () => {
+    hostDialog.classList.add('open');
+    document.getElementById('host-error').textContent = '';
+    document.getElementById('host-endpoint').focus();
+  });
+  document.getElementById('host-cancel').addEventListener('click', () => {
+    hostDialog.classList.remove('open');
+  });
+  document.getElementById('host-confirm').addEventListener('click', async () => {
+    const ep = document.getElementById('host-endpoint').value.trim();
+    const listen = document.getElementById('host-listen').value.trim();
+    const errEl = document.getElementById('host-error');
+    if (!ep) { errEl.textContent = 'Endpoint is required'; return; }
+    try {
+      await networkHost(ep, listen);
+      hostDialog.classList.remove('open');
+    } catch (err) {
+      errEl.textContent = err.message || String(err);
+    }
+  });
+
+  const joinDialog = document.getElementById('join-dialog');
+  document.getElementById('btn-join').addEventListener('click', () => {
+    joinDialog.classList.add('open');
+    document.getElementById('join-error').textContent = '';
+    document.getElementById('join-url').focus();
+  });
+  document.getElementById('join-cancel').addEventListener('click', () => {
+    joinDialog.classList.remove('open');
+  });
+  document.getElementById('join-confirm').addEventListener('click', async () => {
+    const url = document.getElementById('join-url').value.trim();
+    const errEl = document.getElementById('join-error');
+    if (!url) { errEl.textContent = 'Session URL is required'; return; }
+    setClientPill('connecting');
+    try {
+      await networkJoin(url);
+      joinDialog.classList.remove('open');
+    } catch (err) {
+      setClientPill('error');
+      errEl.textContent = err.message || String(err);
+    }
+  });
+
+  document.getElementById('btn-stop-hosting').addEventListener('click', networkStandalone);
+  document.getElementById('btn-leave').addEventListener('click', networkStandalone);
+  document.getElementById('btn-new-session').addEventListener('click', async () => {
+    try {
+      const { url, session } = await networkNewSession();
+      addSessionToList(session, url);
+    } catch (err) {
+      console.error('new session:', err);
+    }
+  });
+
+  // ---- SSE subscriber -------------------------------------------------
+
+  function startEventSource() {
+    const es = new EventSource('/api/session/events');
+    es.addEventListener('mode-change', e => {
+      try { applyNetworkMode(JSON.parse(e.data)); } catch (err) { console.error(err); }
+    });
+    es.addEventListener('session-created', e => {
+      try { addSessionToList(JSON.parse(e.data)); } catch (err) { console.error(err); }
+    });
+    es.addEventListener('session-connected', e => {
+      try { updateSessionStatus(JSON.parse(e.data).fingerprint, 'connected'); } catch (err) {}
+    });
+    es.addEventListener('session-disconnected', e => {
+      try { updateSessionStatus(JSON.parse(e.data).fingerprint, 'waiting'); } catch (err) {}
+    });
+    es.addEventListener('session-removed', e => {
+      try { removeSessionFromList(JSON.parse(e.data).fingerprint); } catch (err) {}
+    });
+    es.addEventListener('session-hello', e => {
+      try { const ev = JSON.parse(e.data); setSessionLabel(ev.fingerprint, ev.label); } catch (err) {}
+    });
+    es.addEventListener('session-sequences', e => {
+      try { const ev = JSON.parse(e.data); populateSessionPicker(ev.fingerprint, ev.payload); } catch (err) {}
+    });
+    es.addEventListener('session-state', e => {
+      try { const ev = JSON.parse(e.data); updateSessionDetail(ev.fingerprint, ev.payload); } catch (err) {}
+    });
+    es.addEventListener('network-verb', e => {
+      try {
+        const ev = JSON.parse(e.data);
+        if (ev.frame) dispatch(ev.frame);
+      } catch (err) { console.error(err); }
+    });
+    es.addEventListener('network-disconnected', () => {
+      if (state.nmode === 'client') setClientPill('disconnected');
+    });
+  }
+
+  async function initNetworkMode() {
+    try {
+      const r = await fetch('/api/mode/state', { cache: 'no-store' });
+      if (r.ok) applyNetworkMode(await r.json());
+    } catch (err) {
+      console.warn('initial mode load failed:', err);
+    }
+    startEventSource();
+  }
+
   loadConfig().then(() => {
     heartbeat();
     play();
     requestAnimationFrame(frame);
+    initNetworkMode();
   }).catch(err => {
     console.error(err);
     document.body.innerText = 'Failed to load config: ' + err.message;

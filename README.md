@@ -75,6 +75,100 @@ the viewer can keep their eyes moving "off-screen" and pick the ball
 back up smoothly when it returns. Cycle time extends by 2 × `lingerSec`
 so the on-screen motion pace stays consistent regardless of dwell.
 
+## Networking — manager / client / standalone
+
+Zoetrope has three runtime modes. Every launch starts in **standalone**
+(the existing behavior, full local control). A practitioner can host a
+session for a remote client; the client pastes the resulting URL into
+their own Zoetrope and the practitioner drives the animation in real
+time.
+
+For use with a qualified IEMT / EMDR / ART practitioner. Zoetrope is a
+tool, not a treatment.
+
+### Modes
+
+- **Standalone** — the default. Full local UI; nothing on the network.
+- **Manager** — replaces the animation viewport with a control surface.
+  The binary listens on a public port and accepts connections from
+  clients who paste the session URL.
+- **Client** — the animation viewport is unchanged but the transport
+  controls collapse to a single "Leave session" button plus a connection
+  pill. The practitioner drives every transport action.
+
+Mode is per-binary (not per-tab) and is **not persisted** across
+restart — every launch starts standalone.
+
+### How a session works
+
+The practitioner runs Zoetrope on a machine with a public IP (or a
+forwarded port at their router) and clicks **Host a session** in the
+editor's Network block. The dialog asks for:
+
+- **Public endpoint** — `host:port` clients dial. Bracket IPv6
+  (`[2001:db8::1]:38130`).
+- **Listen address** — what to bind locally; defaults to `:38130`
+  (all interfaces, v4+v6 where the OS supports dual-bind).
+
+After hosting begins, click **+ New session** to mint a session URL.
+Each new session generates a fresh client cert; the practitioner shares
+the URL with the client via text/email. Sessions are single-pair,
+expire after 10 minutes if unjoined, and survive a 60-second drop
+before being torn down.
+
+The client opens Zoetrope, clicks **Join a session**, and pastes the
+URL. Zoetrope dials the manager over mTLS (TLS 1.3, both sides pinning
+each other's self-signed cert by SHA-256 fingerprint); no CA, no
+domain name, no plaintext. If the URL is malformed, expired, or the
+manager's cert doesn't match the pin, the client refuses to connect.
+
+### Practitioner identity
+
+On first entry into manager mode, Zoetrope generates a long-lived
+Ed25519 keypair + self-signed cert and stores it at:
+
+- Linux: `~/.config/zoetrope/practitioner_identity.pem`
+- macOS: `~/Library/Application Support/zoetrope/practitioner_identity.pem`
+- Windows: `%APPDATA%\zoetrope\practitioner_identity.pem`
+
+Mode `0600`. Every session URL the practitioner mints carries this
+cert's fingerprint, which the client pins. Clients can confirm "same
+practitioner as last time" by comparing fingerprints across URLs.
+
+Rotation is manual: delete the file and re-enter manager mode. **Doing
+so invalidates every session URL the practitioner has ever shared.**
+
+### Firewalls and ports
+
+Two layers of firewall to think about:
+
+1. **Router NAT** — the practitioner must forward the chosen port
+   (default `38130`) from the public IP to the host running Zoetrope.
+   The client does no firewall work.
+2. **Local OS firewall** — Windows Defender Firewall / macOS firewall /
+   `ufw` will block inbound on the listen port by default. Allow
+   inbound TCP on `38130` (or whatever was chosen) for `zoetrope`.
+
+If the listener starts but no client ever reaches it, check both.
+
+### Protocol
+
+JSON frames over a WebSocket inside the TLS connection. Manager → client:
+`play`, `pause`, `resume`, `advance`, `back`, `hold`, `release`, `stop`,
+`set-sequence`. Client → manager: `hello`, `sequences`, `state`. Every
+frame carries `pv: 1` so future revisions can negotiate cleanly.
+
+### Limitations to be aware of
+
+- A manager-binary crash invalidates active sessions; clients see a
+  connection error and must re-paste a fresh URL.
+- Per-device practitioner identity — switching machines makes the
+  practitioner look new to clients. Move `practitioner_identity.pem`
+  manually if you want continuity.
+- The animation viewport renders whatever the **client's** local config
+  declares (background, ball size, palette). The manager drives playback,
+  not appearance.
+
 ## Build & versioning
 
 Requires Go 1.25+, `zip`, and (for the Debian package) `dpkg-deb`.

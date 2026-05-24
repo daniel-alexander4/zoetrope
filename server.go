@@ -41,7 +41,7 @@ func (h *heartbeat) Stale(d time.Duration) bool {
 	return time.Since(time.UnixMilli(last)) > d
 }
 
-func newRouter(store *configStore, hb *heartbeat) (http.Handler, error) {
+func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeState) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	static, err := fs.Sub(webFS, "web")
@@ -71,11 +71,7 @@ func newRouter(store *configStore, hb *heartbeat) (http.Handler, error) {
 		_, _ = w.Write([]byte("v" + version + "\n"))
 	})
 
-	mux.HandleFunc("PUT /config", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get(csrfHeader) == "" {
-			http.Error(w, "missing "+csrfHeader+" header", http.StatusForbidden)
-			return
-		}
+	mux.HandleFunc("PUT /config", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
 		var cfg Config
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
@@ -86,9 +82,112 @@ func newRouter(store *configStore, hb *heartbeat) (http.Handler, error) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	// ---- Mode + session endpoints ----
+	mux.HandleFunc("GET /api/mode/state", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(modes.Snapshot())
 	})
+	mux.HandleFunc("POST /api/mode/host", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		var req hostRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := modes.Host(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /api/mode/join", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		var req joinRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := modes.Join(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /api/mode/standalone", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		modes.Standalone()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	mux.HandleFunc("POST /api/sessions", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		url, snap, err := modes.CreateSession()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"url":     url,
+			"session": snap,
+		})
+	}))
+	mux.HandleFunc("DELETE /api/sessions/{fp}", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		fp := r.PathValue("fp")
+		if err := modes.RemoveSession(fp); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("POST /api/sessions/{fp}/verb", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		fp := r.PathValue("fp")
+		raw, err := readBoundedBody(r, 16*1024)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := modes.SendVerb(fp, raw); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	mux.HandleFunc("POST /api/network/send", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		var msg map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := modes.ClientSend(msg); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	mux.HandleFunc("GET /api/session/events", bus.HandleSSE)
 
 	return mux, nil
+}
+
+func requireCSRF(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(csrfHeader) == "" {
+			http.Error(w, "missing "+csrfHeader+" header", http.StatusForbidden)
+			return
+		}
+		handler(w, r)
+	}
+}
+
+func readBoundedBody(r *http.Request, max int64) (json.RawMessage, error) {
+	r.Body = http.MaxBytesReader(nil, r.Body, max)
+	var raw json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("invalid json: %w", err)
+	}
+	return raw, nil
 }
 
 func noCache(h http.Handler) http.Handler {
