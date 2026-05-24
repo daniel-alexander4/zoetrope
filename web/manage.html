@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zoetrope — Sessions</title>
+  <title>Zoetrope — Hosting session</title>
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -12,17 +12,26 @@
     <div class="brand">
       <img src="icon.png" class="brand-mark" alt="">
       <div class="brand-name">Zoetrope</div>
-      <span class="page-label">Sessions</span>
+      <span class="page-label">Hosting session</span>
     </div>
-    <nav class="mode-pills" aria-label="Mode">
-      <button class="mpill" data-mode="standalone">Standalone</button>
-      <button class="mpill" data-mode="client">Client</button>
-      <button class="mpill" data-mode="hosting">Hosting</button>
-    </nav>
+    <button id="btn-stop-hosting" hidden title="Tear down the listener and return to standalone">Stop hosting</button>
     <a class="back-link" href="/">← Ball view</a>
   </header>
 
   <main id="manage-body">
+    <!-- Standalone state: a single dominant CTA. This is what the
+         user lands on after clicking "Hosting" on the ball page. -->
+    <section id="start-card" hidden>
+      <h2>Start a hosting session</h2>
+      <p>
+        Generate a connection string for your client. The URL pins your
+        practitioner identity, embeds a one-time client cert, and stays
+        valid for 10 minutes.
+      </p>
+      <button id="btn-start" class="primary-cta">Generate connection string</button>
+      <div id="start-error" class="start-error"></div>
+    </section>
+
     <section id="identity-panel" hidden>
       <h3>My identity</h3>
       <div class="identity-row">
@@ -37,15 +46,12 @@
       </div>
     </section>
 
-    <section id="sessions">
+    <section id="sessions" hidden>
       <header>
         <h3>Sessions</h3>
         <button id="btn-new-session" title="Mint another connection string for a new client">+ Generate connection string</button>
       </header>
       <ol id="sessions-list"></ol>
-      <div id="sessions-empty" class="empty-hint">
-        Not hosting yet. Click <strong>Hosting</strong> above to detect your public IP and mint a connection string.
-      </div>
     </section>
   </main>
 

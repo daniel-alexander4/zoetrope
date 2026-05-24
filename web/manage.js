@@ -1,7 +1,7 @@
-// manage.js: the /manage page — pills as the mode switcher, identity
-// panel, sessions list. Shares the SSE bus + REST endpoints with the
-// ball page; no shared JS — they're physically separate apps with
-// distinct paradigms (canvas vs admin lists).
+// manage.js: the /manage page — a single-purpose hosting console.
+// Standalone state shows a prominent "Generate connection string" CTA.
+// Manager state shows the identity panel + sessions list. Client mode
+// is meaningless here, so it redirects to the ball page.
 
 (() => {
   'use strict';
@@ -10,10 +10,6 @@
     nmode: 'standalone',
     sessions: new Map(), // fp → { node, snap }
   };
-
-  // 'hosting' is the user-facing pill name; 'manager' is the system mode.
-  const PILL_TO_MODE = { standalone: 'standalone', client: 'client', hosting: 'manager' };
-  const MODE_TO_PILL = { standalone: 'standalone', client: 'client', manager: 'hosting' };
 
   async function csrfFetch(path, options = {}) {
     const headers = { ...(options.headers || {}), 'X-Zoetrope': '1' };
@@ -41,7 +37,7 @@
     }
   }
 
-  // ---- Mode application + pill state ---------------------------------
+  // ---- Page state -----------------------------------------------------
 
   function applyMode(snap) {
     const mode = snap.mode || 'standalone';
@@ -49,38 +45,34 @@
     document.body.classList.remove('nmode-standalone', 'nmode-client', 'nmode-manager');
     document.body.classList.add('nmode-' + mode);
 
-    document.querySelectorAll('.mpill').forEach(p => {
-      p.classList.toggle('active', PILL_TO_MODE[p.dataset.mode] === mode);
-    });
+    if (mode === 'client') {
+      // /manage is purely for hosting. A client doesn't belong here —
+      // their experience is the ball page.
+      window.location.href = '/';
+      return;
+    }
 
+    const startCard = document.getElementById('start-card');
     const identity = document.getElementById('identity-panel');
-    const list = document.getElementById('sessions-list');
-    const empty = document.getElementById('sessions-empty');
-    const newBtn = document.getElementById('btn-new-session');
+    const sessions = document.getElementById('sessions');
+    const stopBtn = document.getElementById('btn-stop-hosting');
 
     if (mode === 'manager') {
+      startCard.hidden = true;
       identity.hidden = false;
+      sessions.hidden = false;
+      stopBtn.hidden = false;
       document.getElementById('practitioner-fp').textContent = snap.practitioner_fp || '—';
       document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
       renderSessions(snap.sessions || []);
-      newBtn.hidden = false;
-      if (state.sessions.size === 0) {
-        empty.innerHTML = 'No sessions yet. Click <strong>+ Generate connection string</strong> to mint one.';
-        empty.style.display = '';
-      } else {
-        empty.style.display = 'none';
-      }
-    } else {
+    } else { // standalone
+      startCard.hidden = false;
       identity.hidden = true;
+      sessions.hidden = true;
+      stopBtn.hidden = true;
       state.sessions.clear();
-      list.innerHTML = '';
-      newBtn.hidden = true;
-      empty.style.display = '';
-      if (mode === 'client') {
-        empty.innerHTML = 'Currently connected as a client. Open <a href="/">Ball view</a> to see the animation.';
-      } else {
-        empty.innerHTML = 'Not hosting yet. Click <strong>Hosting</strong> above to detect your public IP and mint a connection string.';
-      }
+      document.getElementById('sessions-list').innerHTML = '';
+      document.getElementById('start-error').textContent = '';
     }
   }
 
@@ -111,7 +103,6 @@
     wireSessionNode(node, snap.fingerprint);
     list.appendChild(node);
     state.sessions.set(snap.fingerprint, { node, snap });
-    document.getElementById('sessions-empty').style.display = 'none';
   }
 
   function removeSessionFromList(fp) {
@@ -119,11 +110,6 @@
     if (!entry) return;
     entry.node.remove();
     state.sessions.delete(fp);
-    if (state.sessions.size === 0 && state.nmode === 'manager') {
-      const empty = document.getElementById('sessions-empty');
-      empty.innerHTML = 'No sessions yet. Click <strong>+ Generate connection string</strong> to mint one.';
-      empty.style.display = '';
-    }
   }
 
   function updateSessionStatus(fp, status) {
@@ -188,66 +174,38 @@
     });
   }
 
-  // ---- Quickstart from the "+ Generate connection string" button -----
+  // ---- Generate / Stop ------------------------------------------------
 
-  async function generateConnectionString(triggerEl) {
+  async function generateConnectionString(triggerEl, errEl) {
     const originalText = triggerEl.textContent;
     triggerEl.disabled = true;
     triggerEl.textContent = 'Detecting public IP…';
+    if (errEl) errEl.textContent = '';
     try {
       const { url, session } = await networkQuickstart();
       addSessionToList(session, url);
     } catch (err) {
-      alert('Generate connection string failed: ' + (err.message || err));
+      const msg = err.message || String(err);
+      if (errEl) errEl.textContent = msg;
+      else alert('Generate connection string failed: ' + msg);
     } finally {
       triggerEl.disabled = false;
       triggerEl.textContent = originalText;
     }
   }
+
+  document.getElementById('btn-start').addEventListener('click', e => {
+    generateConnectionString(e.currentTarget, document.getElementById('start-error'));
+  });
   document.getElementById('btn-new-session').addEventListener('click', e => {
-    generateConnectionString(e.currentTarget);
+    generateConnectionString(e.currentTarget, null);
   });
-
-  // ---- Pill clicks ---------------------------------------------------
-
-  document.querySelectorAll('.mpill').forEach(p => {
-    p.addEventListener('click', () => onPillClick(p));
+  document.getElementById('btn-stop-hosting').addEventListener('click', () => {
+    confirmAction(
+      'Stop hosting? Any connected clients will be disconnected.',
+      () => { networkStandalone(); },
+    );
   });
-
-  function onPillClick(p) {
-    const target = PILL_TO_MODE[p.dataset.mode];
-    if (target === state.nmode) return;
-
-    if (target === 'standalone') {
-      if (state.nmode === 'manager') {
-        confirmAction('Stop hosting? Any connected clients will be disconnected.', networkStandalone);
-      } else {
-        networkStandalone();
-      }
-      return;
-    }
-    if (target === 'client') {
-      // Joining lives on the ball page (that's where the animation
-      // renders). Hop to / with a #join hash so app.js pops the dialog.
-      if (state.nmode === 'manager') {
-        confirmAction('Stop hosting and switch to client mode?', () => {
-          networkStandalone().then(() => { window.location.href = '/#join'; });
-        });
-      } else {
-        window.location.href = '/#join';
-      }
-      return;
-    }
-    if (target === 'manager') {
-      if (state.nmode === 'standalone') {
-        generateConnectionString(p);
-      } else if (state.nmode === 'client') {
-        confirmAction('Leave the current session and start hosting?', () => {
-          networkStandalone().then(() => generateConnectionString(p));
-        });
-      }
-    }
-  }
 
   // ---- Confirm overlay -----------------------------------------------
 
@@ -312,8 +270,8 @@
   }
 
   // ---- Heartbeat ------------------------------------------------------
-  // Same 5 s cadence as app.js. Keeps the binary alive in standalone
-  // mode when only the manage tab is open.
+  // Same 5 s cadence as the ball page. Keeps the binary alive in
+  // standalone mode when only the manage tab is open.
 
   function heartbeat() {
     fetch('/heartbeat', { method: 'POST' }).catch(()=>{});
