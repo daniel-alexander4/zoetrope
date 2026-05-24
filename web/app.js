@@ -82,26 +82,45 @@
 
   // For linear patterns: map cycle fraction t to a position in [-1, +1]
   // and a size multiplier, inserting a dwell-and-pulse at each extreme.
-  // L is the fraction of one cycle taken by *each* linger phase.
+  // L is the fraction of one cycle taken by *each* linger phase. The size
+  // pulse extends `lead` past the dwell on each side so growth begins
+  // during the approach and shrink finishes during the departure.
   function linearSchedule(t, L) {
     if (L <= 0 || L >= 0.5) {
       return { pos: -Math.cos(TAU * t), sizeMul: 1 };
     }
     const half = (1 - 2 * L) / 2; // each moving phase fraction
+    const leadFrac = Math.max(0, state.config.lingerLeadFrac ?? 0);
+    const lead = Math.min(L, half) * leadFrac;
+    const pulseLen = L + 2 * lead;
+
+    let pos;
     if (t < half) {
-      const u = t / half;
-      return { pos: -Math.cos(Math.PI * u), sizeMul: 1 };
+      pos = -Math.cos(Math.PI * (t / half));
+    } else if (t < half + L) {
+      pos = 1;
+    } else if (t < 2 * half + L) {
+      pos = Math.cos(Math.PI * ((t - half - L) / half));
+    } else {
+      pos = -1;
     }
-    if (t < half + L) {
-      const u = (t - half) / L;
-      return { pos: 1, sizeMul: 1 + (LINGER_PEAK - 1) * Math.sin(Math.PI * u) };
+
+    // One sine pulse per edge, centered on its dwell midpoint but widened
+    // by `lead` into both adjacent motion phases. The −1 pulse wraps the
+    // cycle boundary (trailing half lives in the next cycle's start).
+    let u = -1;
+    if (t >= half - lead && t < half + L + lead) {
+      u = (t - (half - lead)) / pulseLen;
+    } else if (t >= 1 - L - lead) {
+      u = (t - (1 - L - lead)) / pulseLen;
+    } else if (t < lead) {
+      u = (t + L + lead) / pulseLen;
     }
-    if (t < 2 * half + L) {
-      const u = (t - half - L) / half;
-      return { pos: Math.cos(Math.PI * u), sizeMul: 1 };
-    }
-    const u = (t - 2 * half - L) / L;
-    return { pos: -1, sizeMul: 1 + (LINGER_PEAK - 1) * Math.sin(Math.PI * u) };
+    const sizeMul = u >= 0
+      ? 1 + (LINGER_PEAK - 1) * Math.sin(Math.PI * u)
+      : 1;
+
+    return { pos, sizeMul };
   }
 
   const patterns = {
@@ -497,6 +516,7 @@
     document.getElementById('ball-size').value = state.config.ballSize;
     document.getElementById('speed-input').value = state.config.speed;
     document.getElementById('linger-input').value = state.config.lingerSec;
+    document.getElementById('linger-lead-input').value = state.config.lingerLeadFrac ?? 0;
     renderEditor();
   }
 
@@ -587,6 +607,10 @@
   });
   document.getElementById('linger-input').addEventListener('input', e => {
     state.config.lingerSec = +e.target.value;
+    markDirty();
+  });
+  document.getElementById('linger-lead-input').addEventListener('input', e => {
+    state.config.lingerLeadFrac = +e.target.value;
     markDirty();
   });
 

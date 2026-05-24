@@ -47,7 +47,13 @@
       <label>Background <input type="color" id="bg-color"></label>
       <label>Ball size <input type="number" id="ball-size" min="2" max="400" step="1"></label>
       <label>Speed <input type="number" id="speed-input" min="0" max="10" step="0.1"></label>
-      <label>Edge linger (s) <input type="number" id="linger-input" min="0" max="10" step="0.1"></label>
+    </div>
+    <div class="global linger-group">
+      <span class="group-label">Linger</span>
+      <label>Seconds <input type="number" id="linger-input" min="0" max="10" step="0.1"></label>
+      <label title="How far the size pulse leads into adjacent motion (0 = pulse confined to dwell, 0.5 = wide anticipation)">
+        Lead frac <input type="number" id="linger-lead-input" min="0" max="1" step="0.05">
+      </label>
     </div>
     <ol id="playlist"></ol>
     <footer>
