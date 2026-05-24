@@ -38,9 +38,11 @@ manager. The browser tab is harmless on its own.
   - `>` Next pattern
   - Speed multiplier (`0.25×` – `4×`)
   - Gear icon — toggle the editor panel
-- **Editor panel (right)** — add / reorder / delete playlist items, edit
-  per-item parameters, pick background color. Click **Save** to write to
-  the config file; **Revert** discards unsaved edits.
+- **Editor panel (right)** — global controls at top (background color,
+  ball size, cycle duration in seconds); add / reorder / delete playlist
+  items below; per-item color / repeats / direction / angle. Click
+  **Save** to write to the config file; **Revert** discards unsaved
+  edits.
 - **Keyboard shortcuts** — Space (play/pause), ← (start of pattern),
   → (next pattern), Home (start of playlist).
 
@@ -57,8 +59,10 @@ manager. The browser tab is harmless on its own.
 | infinity-v  | trace of vertical 8 (lobes stacked) | yes               | —          |
 | bounce      | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
 
-`duration` is the number of seconds one cycle takes (lower = faster).
-`repeats` is how many cycles the item plays before the playlist advances.
+`duration` (seconds per cycle, global) and `ballSize` (pixels, global)
+apply to every item. `repeats` (per item) is how many cycles play before
+the playlist advances. The speed multiplier in the transport bar
+scales `duration` at runtime without persisting.
 
 ## Build
 

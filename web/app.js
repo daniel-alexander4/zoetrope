@@ -40,7 +40,7 @@
 
   const patterns = {
     'h-sweep': (t, item, vp) => {
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const amp = (vp.w - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
@@ -49,7 +49,7 @@
     },
 
     'v-sweep': (t, item, vp) => {
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const amp = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
@@ -58,7 +58,7 @@
     },
 
     'circle': (t, item, vp) => {
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const r = Math.min(vp.w, vp.h) / 2 - m - 8;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
@@ -69,7 +69,7 @@
 
     'infinity-v': (t, item, vp) => {
       // Vertical infinity (8 standing up — lobes stacked).
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const ampX = (vp.w - 2 * m) / 2 - 8;
       const ampY = (vp.h - 2 * m) / 2 - 8;
       const cx = vp.w / 2;
@@ -83,7 +83,7 @@
 
     'infinity-h': (t, item, vp) => {
       // Horizontal infinity (∞ on its side — lobes side by side).
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const ampX = (vp.w - 2 * m) / 2 - 8;
       const ampY = (vp.h - 2 * m) / 2 - 8;
       const cx = vp.w / 2;
@@ -97,7 +97,7 @@
 
     'diag-ulbr': (t, item, vp) => {
       // Upper-left ↔ bottom-right diagonal sweep.
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const ampX = (vp.w - 2 * m) / 2;
       const ampY = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
@@ -108,7 +108,7 @@
 
     'diag-urbl': (t, item, vp) => {
       // Upper-right ↔ bottom-left diagonal sweep.
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const ampX = (vp.w - 2 * m) / 2;
       const ampY = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
@@ -120,7 +120,7 @@
     'bounce': (t, item, vp) => {
       // t spans one "cycle"; in one cycle the ball travels max(w,h) of
       // unfolded distance. Reflections folded via triangle wave.
-      const m = item.ballSize / 2;
+      const m = state.config.ballSize / 2;
       const innerW = vp.w - 2 * m;
       const innerH = vp.h - 2 * m;
       const speed = Math.max(vp.w, vp.h); // per cycle
@@ -170,7 +170,7 @@
   function advance(dt) {
     const item = currentItem();
     if (!item) return;
-    const dur = Math.max(0.05, item.duration || 1) / state.speedMul;
+    const dur = Math.max(0.05, state.config.duration || 2) / state.speedMul;
     state.t += dt / dur;
     while (state.t >= 1) {
       state.t -= 1;
@@ -195,7 +195,7 @@
     const { x, y } = fn(state.t, item, vp);
 
     ctx.beginPath();
-    ctx.arc(x, y, (item.ballSize || 20) / 2, 0, TAU);
+    ctx.arc(x, y, (state.config.ballSize || 24) / 2, 0, TAU);
     ctx.fillStyle = item.color || '#fff';
     ctx.fill();
   }
@@ -268,8 +268,6 @@
       node.dataset.pattern = item.pattern;
       node.querySelector('.pattern').value = item.pattern;
       node.querySelector('.color').value = item.color || '#ffffff';
-      node.querySelector('.ballSize').value = item.ballSize ?? 24;
-      node.querySelector('.duration').value = item.duration ?? 2;
       node.querySelector('.repeats').value = item.repeats ?? 1;
       node.querySelector('.direction').value = item.direction || 'cw';
       node.querySelector('.angle').value = item.angleDeg ?? 37;
@@ -281,14 +279,6 @@
       });
       node.querySelector('.color').addEventListener('input', e => {
         item.color = e.target.value;
-        markDirty();
-      });
-      node.querySelector('.ballSize').addEventListener('input', e => {
-        item.ballSize = +e.target.value;
-        markDirty();
-      });
-      node.querySelector('.duration').addEventListener('input', e => {
-        item.duration = +e.target.value;
         markDirty();
       });
       node.querySelector('.repeats').addEventListener('input', e => {
@@ -354,8 +344,6 @@
     state.config.playlist.push({
       pattern: 'h-sweep',
       color: '#cba6f7',
-      ballSize: 24,
-      duration: 2,
       repeats: 3,
       direction: 'cw',
       angleDeg: 37,
@@ -381,8 +369,12 @@
     const r = await fetch('/config', { cache: 'no-store' });
     if (!r.ok) throw new Error('load config: ' + r.status);
     state.config = await r.json();
+    if (!state.config.ballSize) state.config.ballSize = 24;
+    if (!state.config.duration) state.config.duration = 3;
     enterItem(0);
     document.getElementById('bg-color').value = state.config.background || '#000000';
+    document.getElementById('ball-size').value = state.config.ballSize;
+    document.getElementById('duration').value = state.config.duration;
     renderEditor();
   }
 
@@ -414,6 +406,14 @@
   document.getElementById('btn-revert').addEventListener('click', () => loadConfig().then(markClean));
   document.getElementById('bg-color').addEventListener('input', e => {
     state.config.background = e.target.value;
+    markDirty();
+  });
+  document.getElementById('ball-size').addEventListener('input', e => {
+    state.config.ballSize = +e.target.value;
+    markDirty();
+  });
+  document.getElementById('duration').addEventListener('input', e => {
+    state.config.duration = +e.target.value;
     markDirty();
   });
 

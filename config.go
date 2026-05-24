@@ -12,6 +12,8 @@ import (
 
 type Config struct {
 	Background      string         `json:"background"`
+	BallSize        float64        `json:"ballSize"`
+	Duration        float64        `json:"duration"`
 	SpeedMultiplier float64        `json:"speedMultiplier"`
 	Playlist        []PlaylistItem `json:"playlist"`
 }
@@ -19,8 +21,6 @@ type Config struct {
 type PlaylistItem struct {
 	Pattern   string  `json:"pattern"`
 	Color     string  `json:"color"`
-	BallSize  float64 `json:"ballSize"`
-	Duration  float64 `json:"duration"`
 	Repeats   int     `json:"repeats"`
 	Direction string  `json:"direction,omitempty"`
 	AngleDeg  float64 `json:"angleDeg,omitempty"`
@@ -29,16 +29,18 @@ type PlaylistItem struct {
 func defaultConfig() Config {
 	return Config{
 		Background:      "#0e0e16",
+		BallSize:        24,
+		Duration:        3.0,
 		SpeedMultiplier: 1.0,
 		Playlist: []PlaylistItem{
-			{Pattern: "h-sweep", Color: "#f5e0dc", BallSize: 24, Duration: 2.0, Repeats: 3},
-			{Pattern: "v-sweep", Color: "#f9e2af", BallSize: 24, Duration: 2.0, Repeats: 3},
-			{Pattern: "diag-ulbr", Color: "#fab387", BallSize: 24, Duration: 2.5, Repeats: 3},
-			{Pattern: "diag-urbl", Color: "#eba0ac", BallSize: 24, Duration: 2.5, Repeats: 3},
-			{Pattern: "circle", Color: "#a6e3a1", BallSize: 24, Duration: 3.0, Repeats: 3, Direction: "cw"},
-			{Pattern: "infinity-h", Color: "#89b4fa", BallSize: 24, Duration: 4.0, Repeats: 3, Direction: "cw"},
-			{Pattern: "infinity-v", Color: "#cba6f7", BallSize: 24, Duration: 4.0, Repeats: 3, Direction: "cw"},
-			{Pattern: "bounce", Color: "#f38ba8", BallSize: 24, Duration: 6.0, Repeats: 1, AngleDeg: 37},
+			{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},
+			{Pattern: "v-sweep", Color: "#f9e2af", Repeats: 3},
+			{Pattern: "diag-ulbr", Color: "#fab387", Repeats: 3},
+			{Pattern: "diag-urbl", Color: "#eba0ac", Repeats: 3},
+			{Pattern: "circle", Color: "#a6e3a1", Repeats: 3, Direction: "cw"},
+			{Pattern: "infinity-h", Color: "#89b4fa", Repeats: 3, Direction: "cw"},
+			{Pattern: "infinity-v", Color: "#cba6f7", Repeats: 3, Direction: "cw"},
+			{Pattern: "bounce", Color: "#f38ba8", Repeats: 1, AngleDeg: 37},
 		},
 	}
 }

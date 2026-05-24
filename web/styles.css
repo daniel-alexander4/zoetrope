@@ -150,9 +150,26 @@ html, body {
   border-bottom: 1px solid var(--overlay);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 13px;
   color: var(--subtext);
+}
+
+#editor .global label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#editor .global input[type="number"] {
+  width: 64px;
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
 }
 
 #playlist {
