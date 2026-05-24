@@ -67,7 +67,7 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-	const heartbeatTimeout = 30 * time.Second
+	const heartbeatTimeout = 90 * time.Second
 	watchdogQuit := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
