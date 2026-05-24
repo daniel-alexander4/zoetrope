@@ -15,6 +15,7 @@ type Config struct {
 	BallSize        float64        `json:"ballSize"`
 	Speed           float64        `json:"speed"` // 0-10 scale; 10 = 1 cycle/sec, 0 = paused
 	SpeedMultiplier float64        `json:"speedMultiplier"`
+	LingerSec       float64        `json:"lingerSec"` // dwell at each extreme of a linear sweep; 0 = off
 	Playlist        []PlaylistItem `json:"playlist"`
 }
 

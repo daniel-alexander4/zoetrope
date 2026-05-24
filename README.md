@@ -66,6 +66,14 @@ second) and `ballSize` (pixels, global) apply to every item. `repeats`
 speed multiplier in the transport bar scales `speed` at runtime without
 persisting.
 
+`lingerSec` (global, default 0) is a vision-training aid for the linear
+patterns (h-sweep, v-sweep, diag-ulbr, diag-urbl). When > 0, the ball
+stops at each extreme of a sweep, grows to 2× then shrinks back over
+`lingerSec` seconds before reversing direction — peripheral feedback so
+the viewer can keep their eyes moving "off-screen" and pick the ball
+back up smoothly when it returns. Cycle time extends by 2 × `lingerSec`
+so the on-screen motion pace stays consistent regardless of dwell.
+
 ## Build
 
 Requires Go 1.25+, `curl`, `zip`. AppImage assembly downloads

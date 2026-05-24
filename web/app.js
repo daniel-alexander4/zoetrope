@@ -56,9 +56,53 @@
   }
 
   // ---- Patterns ---------------------------------------------------------
-  // Each pattern is a pure function (t, item, vp) -> {x, y}, where
-  // t in [0, 1) represents one full cycle. cx, cy = canvas center.
-  // margin keeps the ball inside the visible area.
+  // Each pattern is a pure function (t, item, vp) -> {x, y, sizeMul?},
+  // where t in [0, 1) represents one full cycle. cx, cy = canvas
+  // center. margin keeps the ball inside the visible area. sizeMul
+  // (default 1) lets a pattern scale the ball — used by linear sweeps
+  // when "edge linger" is on to pulse the ball at each extreme.
+
+  const LINGER_PEAK = 2; // ball grows to 2× baseline at the linger midpoint
+
+  function isLinearPattern(p) {
+    return p === 'h-sweep' || p === 'v-sweep' || p === 'diag-ulbr' || p === 'diag-urbl';
+  }
+
+  // Fraction of the current cycle spent in each linger phase. 0 when
+  // linger is disabled, when the pattern isn't linear, or when paused.
+  function lingerFrac(pattern) {
+    if (!isLinearPattern(pattern)) return 0;
+    const sec = state.config.lingerSec ?? 0;
+    if (sec <= 0) return 0;
+    const cps = (Math.max(0, state.config.speed ?? 2) / 10) * state.speedMul;
+    if (cps <= 0) return 0;
+    const baseCycle = 1 / cps;
+    return sec / (baseCycle + 2 * sec);
+  }
+
+  // For linear patterns: map cycle fraction t to a position in [-1, +1]
+  // and a size multiplier, inserting a dwell-and-pulse at each extreme.
+  // L is the fraction of one cycle taken by *each* linger phase.
+  function linearSchedule(t, L) {
+    if (L <= 0 || L >= 0.5) {
+      return { pos: -Math.cos(TAU * t), sizeMul: 1 };
+    }
+    const half = (1 - 2 * L) / 2; // each moving phase fraction
+    if (t < half) {
+      const u = t / half;
+      return { pos: -Math.cos(Math.PI * u), sizeMul: 1 };
+    }
+    if (t < half + L) {
+      const u = (t - half) / L;
+      return { pos: 1, sizeMul: 1 + (LINGER_PEAK - 1) * Math.sin(Math.PI * u) };
+    }
+    if (t < 2 * half + L) {
+      const u = (t - half - L) / half;
+      return { pos: Math.cos(Math.PI * u), sizeMul: 1 };
+    }
+    const u = (t - 2 * half - L) / L;
+    return { pos: -1, sizeMul: 1 + (LINGER_PEAK - 1) * Math.sin(Math.PI * u) };
+  }
 
   const patterns = {
     'h-sweep': (t, item, vp) => {
@@ -66,8 +110,8 @@
       const amp = (vp.w - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const pos = -Math.cos(TAU * t);
-      return { x: cx + amp * pos, y: cy };
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac('h-sweep'));
+      return { x: cx + amp * pos, y: cy, sizeMul };
     },
 
     'v-sweep': (t, item, vp) => {
@@ -75,8 +119,8 @@
       const amp = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const pos = -Math.cos(TAU * t);
-      return { x: cx, y: cy + amp * pos };
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac('v-sweep'));
+      return { x: cx, y: cy + amp * pos, sizeMul };
     },
 
     'circle': (t, item, vp) => {
@@ -124,8 +168,8 @@
       const ampY = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const pos = -Math.cos(TAU * t);
-      return { x: cx + ampX * pos, y: cy + ampY * pos };
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac('diag-ulbr'));
+      return { x: cx + ampX * pos, y: cy + ampY * pos, sizeMul };
     },
 
     'diag-urbl': (t, item, vp) => {
@@ -135,8 +179,8 @@
       const ampY = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const pos = -Math.cos(TAU * t);
-      return { x: cx - ampX * pos, y: cy + ampY * pos };
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac('diag-urbl'));
+      return { x: cx - ampX * pos, y: cy + ampY * pos, sizeMul };
     },
 
     'bounce': (t, item, vp) => {
@@ -195,7 +239,15 @@
     // Speed is on a 0-10 user scale; 10 = 1 cycle/sec.
     // Nullish coalescing (??) — `|| 5` would treat speed=0 as the default.
     const cps = (Math.max(0, state.config.speed ?? 2) / 10) * state.speedMul;
-    state.t += dt * cps;
+    if (cps <= 0) return;
+    // Linger extends each cycle by 2 * lingerSec on linear patterns —
+    // the moving-portion pace stays constant regardless of dwell time.
+    const linger = state.config.lingerSec ?? 0;
+    const baseCycle = 1 / cps;
+    const cycleSec = isLinearPattern(item.pattern) && linger > 0
+      ? baseCycle + 2 * linger
+      : baseCycle;
+    state.t += dt / cycleSec;
     while (state.t >= 1) {
       state.t -= 1;
       state.repeatIdx += 1;
@@ -216,10 +268,10 @@
     if (!item) return;
     const fn = patterns[item.pattern];
     if (!fn) return;
-    const { x, y } = fn(state.t, item, vp);
+    const { x, y, sizeMul = 1 } = fn(state.t, item, vp);
 
     ctx.beginPath();
-    ctx.arc(x, y, (state.config.ballSize || 80) / 2, 0, TAU);
+    ctx.arc(x, y, (state.config.ballSize || 80) / 2 * sizeMul, 0, TAU);
     ctx.fillStyle = item.color || '#fff';
     ctx.fill();
   }
@@ -448,9 +500,11 @@
     if (!state.config.ballSize) state.config.ballSize = 80;
     if (state.config.speed == null) state.config.speed = 2;
     enterItem(0);
+    if (state.config.lingerSec == null) state.config.lingerSec = 0;
     document.getElementById('bg-color').value = state.config.background || '#000000';
     document.getElementById('ball-size').value = state.config.ballSize;
     document.getElementById('speed-input').value = state.config.speed;
+    document.getElementById('linger-input').value = state.config.lingerSec;
     renderEditor();
   }
 
@@ -534,6 +588,10 @@
   });
   document.getElementById('speed-input').addEventListener('input', e => {
     state.config.speed = +e.target.value;
+    markDirty();
+  });
+  document.getElementById('linger-input').addEventListener('input', e => {
+    state.config.lingerSec = +e.target.value;
     markDirty();
   });
 
