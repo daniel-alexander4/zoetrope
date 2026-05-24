@@ -39,7 +39,7 @@ manager. The browser tab is harmless on its own.
   - Speed multiplier (`0.25×` – `4×`)
   - Gear icon — toggle the editor panel
 - **Editor panel (right)** — global controls at top (background color,
-  ball size, speed in seconds per cycle — lower is faster); add / reorder / delete playlist
+  ball size, speed in cycles per second — higher is faster); add / reorder / delete playlist
   items below; per-item color / repeats / direction / angle. Click
   **Save** to write to the config file; **Revert** discards unsaved
   edits.
@@ -59,10 +59,10 @@ manager. The browser tab is harmless on its own.
 | infinity-v  | trace of vertical 8 (lobes stacked) | yes               | —          |
 | bounce      | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
 
-`duration` (seconds per cycle, global) and `ballSize` (pixels, global)
-apply to every item. `repeats` (per item) is how many cycles play before
-the playlist advances. The speed multiplier in the transport bar
-scales `duration` at runtime without persisting.
+`speed` (cycles per second, global; higher = faster) and `ballSize`
+(pixels, global) apply to every item. `repeats` (per item) is how many
+cycles play before the playlist advances. The speed multiplier in the
+transport bar scales `speed` at runtime without persisting.
 
 ## Build
 

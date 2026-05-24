@@ -192,8 +192,8 @@
   function advance(dt) {
     const item = currentItem();
     if (!item) return;
-    const dur = Math.max(0.05, state.config.duration || 2) / state.speedMul;
-    state.t += dt / dur;
+    const sp = Math.max(0.01, state.config.speed || 0.5) * state.speedMul;
+    state.t += dt * sp;
     while (state.t >= 1) {
       state.t -= 1;
       state.repeatIdx += 1;
@@ -435,11 +435,11 @@
     if (!r.ok) throw new Error('load config: ' + r.status);
     state.config = await r.json();
     if (!state.config.ballSize) state.config.ballSize = 24;
-    if (!state.config.duration) state.config.duration = 3;
+    if (!state.config.speed) state.config.speed = 0.5;
     enterItem(0);
     document.getElementById('bg-color').value = state.config.background || '#000000';
     document.getElementById('ball-size').value = state.config.ballSize;
-    document.getElementById('duration').value = state.config.duration;
+    document.getElementById('speed-input').value = state.config.speed;
     renderEditor();
   }
 
@@ -492,8 +492,8 @@
     state.config.ballSize = +e.target.value;
     markDirty();
   });
-  document.getElementById('duration').addEventListener('input', e => {
-    state.config.duration = +e.target.value;
+  document.getElementById('speed-input').addEventListener('input', e => {
+    state.config.speed = +e.target.value;
     markDirty();
   });
 
