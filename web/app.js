@@ -1124,7 +1124,14 @@
   }
 
   function addSessionToList(snap, url) {
-    if (state.sessions.has(snap.fingerprint)) return;
+    // The quickstart POST response and the SSE session-created event can
+    // arrive in either order. If the entry already exists, just fill in
+    // the URL if we have one — never recreate.
+    const existing = state.sessions.get(snap.fingerprint);
+    if (existing) {
+      if (url) existing.node.querySelector('.session-url').value = url;
+      return;
+    }
     const list = document.getElementById('sessions-list');
     const tmpl = document.getElementById('session-template');
     const node = tmpl.content.firstElementChild.cloneNode(true);
@@ -1264,13 +1271,10 @@
 
   // ---- Mode actions ---------------------------------------------------
 
-  async function networkHost(endpoint, listenAddr) {
-    const r = await csrfFetch('/api/mode/host', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint, listen_addr: listenAddr || '' }),
-    });
-    if (!r.ok) throw new Error((await r.text()).trim() || 'host failed');
+  async function networkQuickstart() {
+    const r = await csrfFetch('/api/sessions/quickstart', { method: 'POST' });
+    if (!r.ok) throw new Error((await r.text()).trim() || 'quickstart failed');
+    return r.json();
   }
 
   async function networkJoin(url, label) {
@@ -1286,35 +1290,39 @@
     await csrfFetch('/api/mode/standalone', { method: 'POST' }).catch(()=>{});
   }
 
-  async function networkNewSession() {
-    const r = await csrfFetch('/api/sessions', { method: 'POST' });
-    if (!r.ok) throw new Error((await r.text()).trim() || 'new session failed');
-    return r.json();
-  }
+  // ---- Quickstart: one-button "Generate connection string" -----------
+  //
+  // Bound to both the standalone-mode "Generate connection string" button
+  // and the manager-mode "+ Generate connection string" button. In
+  // standalone the server detects the public IP and enters manager mode
+  // before minting; in manager mode it just mints another session.
 
-  // ---- Dialog wiring --------------------------------------------------
-
-  const hostDialog = document.getElementById('host-dialog');
-  document.getElementById('btn-host').addEventListener('click', () => {
-    hostDialog.classList.add('open');
-    document.getElementById('host-error').textContent = '';
-    document.getElementById('host-endpoint').focus();
-  });
-  document.getElementById('host-cancel').addEventListener('click', () => {
-    hostDialog.classList.remove('open');
-  });
-  document.getElementById('host-confirm').addEventListener('click', async () => {
-    const ep = document.getElementById('host-endpoint').value.trim();
-    const listen = document.getElementById('host-listen').value.trim();
-    const errEl = document.getElementById('host-error');
-    if (!ep) { errEl.textContent = 'Endpoint is required'; return; }
+  async function generateConnectionString(btnEl) {
+    const status = document.getElementById('host-status');
+    const originalText = btnEl.textContent;
+    btnEl.disabled = true;
+    btnEl.textContent = 'Detecting public IP…';
+    if (status) status.textContent = '';
     try {
-      await networkHost(ep, listen);
-      hostDialog.classList.remove('open');
+      const { url, session } = await networkQuickstart();
+      addSessionToList(session, url);
     } catch (err) {
-      errEl.textContent = err.message || String(err);
+      const msg = err.message || String(err);
+      if (status) status.textContent = msg;
+      else alert('Generate connection string failed: ' + msg);
+    } finally {
+      btnEl.disabled = false;
+      btnEl.textContent = originalText;
     }
+  }
+  document.getElementById('btn-host').addEventListener('click', e => {
+    generateConnectionString(e.currentTarget);
   });
+  document.getElementById('btn-new-session').addEventListener('click', e => {
+    generateConnectionString(e.currentTarget);
+  });
+
+  // ---- Join dialog ----------------------------------------------------
 
   const joinDialog = document.getElementById('join-dialog');
   document.getElementById('btn-join').addEventListener('click', () => {
@@ -1341,14 +1349,6 @@
 
   document.getElementById('btn-stop-hosting').addEventListener('click', networkStandalone);
   document.getElementById('btn-leave').addEventListener('click', networkStandalone);
-  document.getElementById('btn-new-session').addEventListener('click', async () => {
-    try {
-      const { url, session } = await networkNewSession();
-      addSessionToList(session, url);
-    } catch (err) {
-      console.error('new session:', err);
-    }
-  });
 
   // ---- SSE subscriber -------------------------------------------------
 

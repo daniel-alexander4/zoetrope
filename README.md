@@ -102,19 +102,21 @@ restart — every launch starts standalone.
 ### How a session works
 
 The practitioner runs Zoetrope on a machine with a public IP (or a
-forwarded port at their router) and clicks **Host a session** in the
-editor's Network block. The dialog asks for:
+forwarded port at their router) and clicks **Generate connection string**
+in the editor's Network block. The binary:
 
-- **Public endpoint** — `host:port` clients dial. Bracket IPv6
-  (`[2001:db8::1]:38130`).
-- **Listen address** — what to bind locally; defaults to `:38130`
-  (all interfaces, v4+v6 where the OS supports dual-bind).
+1. Asks `api64.ipify.org` for the practitioner's public IP (one outbound
+   call, user-initiated by the button click).
+2. Enters manager mode and binds the hardcoded port **38130**.
+3. Mints a fresh per-session client cert.
+4. Returns a session URL of the form
+   `zoetrope://join?ws=wss://<public-ip>:38130#<base64url payload>`.
 
-After hosting begins, click **+ New session** to mint a session URL.
-Each new session generates a fresh client cert; the practitioner shares
-the URL with the client via text/email. Sessions are single-pair,
-expire after 10 minutes if unjoined, and survive a 60-second drop
-before being torn down.
+Each click of **+ Generate connection string** in the manager view mints
+another URL for another client. The practitioner shares each URL with
+its intended client via text/email. Sessions are single-pair, expire
+after 10 minutes if unjoined, and survive a 60-second drop before being
+torn down.
 
 The client opens Zoetrope, clicks **Join a session**, and pastes the
 URL. Zoetrope dials the manager over mTLS (TLS 1.3, both sides pinning
@@ -140,14 +142,13 @@ so invalidates every session URL the practitioner has ever shared.**
 
 ### Firewalls and ports
 
-Two layers of firewall to think about:
+The listen port is hardcoded to **38130**. Two firewall layers to set up:
 
-1. **Router NAT** — the practitioner must forward the chosen port
-   (default `38130`) from the public IP to the host running Zoetrope.
-   The client does no firewall work.
+1. **Router NAT** — forward TCP `38130` from your public IP to the host
+   running Zoetrope. The client does no firewall work.
 2. **Local OS firewall** — Windows Defender Firewall / macOS firewall /
-   `ufw` will block inbound on the listen port by default. Allow
-   inbound TCP on `38130` (or whatever was chosen) for `zoetrope`.
+   `ufw` will block inbound on `38130` by default. Allow inbound TCP on
+   `38130` for `zoetrope`.
 
 If the listener starts but no client ever reaches it, check both.
 

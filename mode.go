@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -24,10 +25,19 @@ const (
 	modeManager    = "manager"
 	modeClient     = "client"
 
-	managerDefaultListen = ":38130"
-	managerIdleShutdown  = 30 * time.Minute
-	sessionURLTTL        = 10 * time.Minute
-	heartbeatTimeout     = 90 * time.Second // browser-heartbeat watchdog (standalone/client only)
+	// Hardcoded so practitioners never have to think about ports. The
+	// router-side port-forward and the client-side URL both assume this.
+	managerHardcodedPort = "38130"
+	managerListenAddr    = ":" + managerHardcodedPort
+
+	managerIdleShutdown = 30 * time.Minute
+	sessionURLTTL       = 10 * time.Minute
+	heartbeatTimeout    = 90 * time.Second // browser-heartbeat watchdog (standalone/client only)
+
+	// Public-IP echo service used by Quickstart. api64.* returns whichever
+	// family the request egresses on (v4 or v6). One deliberate outbound
+	// call, user-initiated (a button click), no identifying data sent.
+	ipDetectURL = "https://api64.ipify.org/?format=json"
 )
 
 // session is one manager-side session: the client cert the manager
@@ -203,18 +213,14 @@ func (m *modeState) ShouldShutdown(hb *heartbeat) bool {
 // ---- Mode transitions ------------------------------------------------
 
 type hostRequest struct {
-	Endpoint   string `json:"endpoint"`              // host:port — what clients dial
-	ListenAddr string `json:"listen_addr,omitempty"` // host:port to bind (defaults to :38130)
+	Endpoint string `json:"endpoint"` // host:port — what clients dial
 }
 
 func (m *modeState) Host(req hostRequest) error {
 	if req.Endpoint == "" {
 		return errors.New("endpoint is required")
 	}
-	listenAddr := req.ListenAddr
-	if listenAddr == "" {
-		listenAddr = managerDefaultListen
-	}
+	listenAddr := managerListenAddr
 
 	idPath, err := practitionerIdentityPath(m.appName)
 	if err != nil {
@@ -386,6 +392,55 @@ func (m *modeState) Standalone() {
 	}
 
 	m.bus.Publish("mode-change", m.Snapshot())
+}
+
+// Quickstart is the one-button "Generate connection string" flow: detect
+// the public IP, enter manager mode (if not already), and mint a session
+// URL — all in one round trip. The port is fixed; the practitioner
+// never sees or types a number.
+func (m *modeState) Quickstart() (string, sessionSnapshot, error) {
+	if m.Mode() != modeManager {
+		ip, err := detectPublicIP(context.Background())
+		if err != nil {
+			return "", sessionSnapshot{}, fmt.Errorf("detect public IP: %w", err)
+		}
+		endpoint := net.JoinHostPort(ip, managerHardcodedPort)
+		if err := m.Host(hostRequest{Endpoint: endpoint}); err != nil {
+			return "", sessionSnapshot{}, err
+		}
+	}
+	return m.CreateSession()
+}
+
+// detectPublicIP asks a public IP-echo service for our externally-visible
+// address. One deliberate outbound call, user-initiated (a button click);
+// flagged in CLAUDE.md / README so it isn't a surprise.
+func detectPublicIP(parent context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", ipDetectURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "zoetrope/"+version)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ipify status %d", resp.StatusCode)
+	}
+	var out struct {
+		IP string `json:"ip"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024)).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode ipify response: %w", err)
+	}
+	if out.IP == "" {
+		return "", errors.New("empty IP from ipify")
+	}
+	return out.IP, nil
 }
 
 func trimScheme(endpoint string) string {

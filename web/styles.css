@@ -530,6 +530,14 @@ body:not(.nmode-standalone) .network-block { display: none; }
   cursor: pointer;
 }
 .network-block button:hover { background: var(--overlay); }
+.network-block button:disabled { opacity: 0.6; cursor: wait; }
+.host-status {
+  width: 100%;
+  font-size: 11px;
+  color: var(--danger);
+  min-height: 1em;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
 
 /* Manager view */
 #manager-view {

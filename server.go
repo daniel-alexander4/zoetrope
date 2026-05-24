@@ -131,6 +131,18 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 			"session": snap,
 		})
 	}))
+	mux.HandleFunc("POST /api/sessions/quickstart", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		url, snap, err := modes.Quickstart()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"url":     url,
+			"session": snap,
+		})
+	}))
 	mux.HandleFunc("DELETE /api/sessions/{fp}", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
 		fp := r.PathValue("fp")
 		if err := modes.RemoveSession(fp); err != nil {

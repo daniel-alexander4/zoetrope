@@ -96,8 +96,9 @@
     <ol id="playlist" class="balls-only"></ol>
     <div class="network-block">
       <h3>Network</h3>
-      <button id="btn-host" title="Host a session for a remote client">Host a session</button>
+      <button id="btn-host" title="Auto-detect your public IP, start hosting, and mint a fresh session URL">Generate connection string</button>
       <button id="btn-join" title="Join a session a practitioner has shared">Join a session</button>
+      <div id="host-status" class="host-status"></div>
     </div>
     <footer>
       <button id="btn-save">Save</button>
@@ -149,7 +150,7 @@
     <section id="sessions">
       <header>
         <h3>Sessions</h3>
-        <button id="btn-new-session">+ New session</button>
+        <button id="btn-new-session" title="Generate another connection string for a new client">+ Generate connection string</button>
       </header>
       <ol id="sessions-list"></ol>
     </section>
@@ -182,26 +183,6 @@
   <div id="client-status">
     <span id="client-pill" data-state="connecting">Connecting…</span>
     <button id="btn-leave" title="End the session and return to standalone">Leave session</button>
-  </div>
-
-  <!-- Host dialog -->
-  <div id="host-dialog" class="dialog">
-    <div class="dialog-card">
-      <h3>Host a session</h3>
-      <label class="dialog-field">Public endpoint
-        <input type="text" id="host-endpoint" placeholder="203.0.113.42:38130" autocomplete="off">
-        <span class="dialog-hint">What clients dial. Your reachable host:port.</span>
-      </label>
-      <label class="dialog-field">Listen address
-        <input type="text" id="host-listen" placeholder=":38130" autocomplete="off">
-        <span class="dialog-hint">What to bind locally. Leave blank for :38130.</span>
-      </label>
-      <div class="dialog-actions">
-        <button id="host-cancel" class="ghost">Cancel</button>
-        <button id="host-confirm">Start hosting</button>
-      </div>
-      <div id="host-error" class="dialog-error"></div>
-    </div>
   </div>
 
   <!-- Join dialog -->
