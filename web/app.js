@@ -3,6 +3,28 @@
 
   const TAU = Math.PI * 2;
 
+  const PATTERN_LABELS = {
+    'h-sweep':    'Horizontal sweep',
+    'v-sweep':    'Vertical sweep',
+    'diag-ulbr':  'Diagonal ↘ (UL↔BR)',
+    'diag-urbl':  'Diagonal ↙ (UR↔BL)',
+    'bounce':     'Bounce',
+    'circle':     'Circle',
+    'infinity-h': 'Infinity ∞',
+    'infinity-v': 'Infinity 8 (vertical)',
+  };
+
+  const PATTERN_DEFAULTS = {
+    'h-sweep':    { color: '#f5e0dc' },
+    'v-sweep':    { color: '#f9e2af' },
+    'diag-ulbr':  { color: '#fab387' },
+    'diag-urbl':  { color: '#eba0ac' },
+    'bounce':     { color: '#f38ba8', angleDeg: 37 },
+    'circle':     { color: '#a6e3a1', direction: 'cw' },
+    'infinity-h': { color: '#89b4fa', direction: 'cw' },
+    'infinity-v': { color: '#cba6f7', direction: 'cw' },
+  };
+
   const state = {
     config: null,
     itemIdx: 0,
@@ -266,17 +288,13 @@
     state.config.playlist.forEach((item, i) => {
       const node = tmpl.content.firstElementChild.cloneNode(true);
       node.dataset.pattern = item.pattern;
-      node.querySelector('.pattern').value = item.pattern;
+      node.dataset.index = String(i);
+      node.querySelector('.pattern-name').textContent = PATTERN_LABELS[item.pattern] || item.pattern;
       node.querySelector('.color').value = item.color || '#ffffff';
       node.querySelector('.repeats').value = item.repeats ?? 1;
       node.querySelector('.direction').value = item.direction || 'cw';
       node.querySelector('.angle').value = item.angleDeg ?? 37;
 
-      node.querySelector('.pattern').addEventListener('change', e => {
-        item.pattern = e.target.value;
-        node.dataset.pattern = item.pattern;
-        markDirty();
-      });
       node.querySelector('.color').addEventListener('input', e => {
         item.color = e.target.value;
         markDirty();
@@ -294,16 +312,16 @@
         markDirty();
       });
 
-      // Drag-to-reorder: handle activates the LI's draggable state on
-      // mousedown so inputs inside the row remain freely interactive.
+      // Drag-to-reorder: title bar activates the LI's draggable state on
+      // mousedown so inputs inside the body row remain freely interactive.
       // A one-shot mouseup listener resets draggable in case the user
-      // clicks the handle without actually dragging.
-      const handle = node.querySelector('.handle');
-      handle.addEventListener('mousedown', () => {
+      // clicks without actually dragging.
+      const titleBar = node.querySelector('.title-bar');
+      titleBar.addEventListener('mousedown', e => {
+        if (e.target.closest('.del')) return;  // don't drag when clicking ×
         node.draggable = true;
         document.addEventListener('mouseup', () => { node.draggable = false; }, { once: true });
       });
-      node.dataset.index = String(i);
 
       node.addEventListener('dragstart', e => {
         e.dataTransfer.effectAllowed = 'move';
@@ -377,16 +395,26 @@
     renderEditor();
   }
 
-  function addItem() {
+  function addItem(pattern) {
+    if (!PATTERN_LABELS[pattern]) return;
+    const defaults = PATTERN_DEFAULTS[pattern] || {};
     state.config.playlist.push({
-      pattern: 'h-sweep',
-      color: '#cba6f7',
+      pattern,
       repeats: 3,
-      direction: 'cw',
-      angleDeg: 37,
+      ...defaults,
     });
     markDirty();
     renderEditor();
+  }
+
+  function populateAddPattern() {
+    const sel = document.getElementById('add-pattern');
+    Object.entries(PATTERN_LABELS).forEach(([key, label]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    });
   }
 
   function markDirty() {
@@ -438,7 +466,12 @@
   document.getElementById('btn-toggle-editor').addEventListener('click', () => {
     document.getElementById('editor').classList.toggle('hidden');
   });
-  document.getElementById('btn-add').addEventListener('click', addItem);
+  populateAddPattern();
+  document.getElementById('add-pattern').addEventListener('change', e => {
+    if (!e.target.value) return;
+    addItem(e.target.value);
+    e.target.value = '';
+  });
   document.getElementById('btn-save').addEventListener('click', saveConfig);
   document.getElementById('btn-revert').addEventListener('click', () => loadConfig().then(markClean));
   document.getElementById('bg-color').addEventListener('input', e => {

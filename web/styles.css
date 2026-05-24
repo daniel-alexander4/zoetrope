@@ -134,14 +134,14 @@ html, body {
   font-weight: 500;
 }
 
-#editor header button {
+#editor header #add-pattern {
   background: var(--accent);
   color: var(--base);
   border: 0;
   border-radius: 6px;
-  width: 28px;
-  height: 28px;
-  font-size: 16px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -185,10 +185,10 @@ html, body {
   background: var(--surface);
   border: 1px solid var(--overlay);
   border-radius: 8px;
-  padding: 10px;
   margin-bottom: 8px;
   position: relative;
   counter-increment: pli;
+  overflow: hidden;
 }
 
 .item.playing {
@@ -199,11 +199,40 @@ html, body {
 .item::before {
   content: counter(pli);
   position: absolute;
-  top: 8px;
+  top: 6px;
   left: -22px;
   color: var(--subtext);
   font-size: 12px;
   font-family: ui-monospace, monospace;
+}
+
+.item .title-bar {
+  background: var(--overlay);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px 5px 10px;
+  cursor: grab;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.item .title-bar:hover {
+  background: color-mix(in oklab, var(--overlay), var(--accent) 14%);
+}
+
+.item .title-bar .pattern-name {
+  flex: 1;
+}
+
+.item.dragging {
+  opacity: 0.4;
+}
+
+.item.dragging .title-bar {
+  cursor: grabbing;
 }
 
 .item .row {
@@ -211,31 +240,7 @@ html, body {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-}
-
-.item .row + .row {
-  margin-top: 6px;
-}
-
-.item .handle {
-  cursor: grab;
-  color: var(--subtext);
-  font-size: 14px;
-  user-select: none;
-  padding: 0 6px;
-  line-height: 1;
-}
-
-.item .handle:hover {
-  color: var(--accent);
-}
-
-.item.dragging {
-  opacity: 0.4;
-}
-
-.item.dragging .handle {
-  cursor: grabbing;
+  padding: 8px 10px;
 }
 
 .item.drop-above {

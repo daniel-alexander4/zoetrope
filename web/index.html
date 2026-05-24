@@ -34,7 +34,9 @@
   <aside id="editor" class="hidden">
     <header>
       <h2>Playlist</h2>
-      <button id="btn-add" title="Add item">+</button>
+      <select id="add-pattern" title="Add pattern">
+        <option value="" disabled selected>+ Add…</option>
+      </select>
     </header>
     <div class="global">
       <label>Background <input type="color" id="bg-color"></label>
@@ -51,22 +53,12 @@
 
   <template id="item-template">
     <li class="item">
-      <div class="row">
-        <span class="handle" title="Drag to reorder">⋮⋮</span>
-        <select class="pattern">
-          <option value="h-sweep">Horizontal sweep</option>
-          <option value="v-sweep">Vertical sweep</option>
-          <option value="diag-ulbr">Diagonal ↘ (UL↔BR)</option>
-          <option value="diag-urbl">Diagonal ↙ (UR↔BL)</option>
-          <option value="bounce">Bounce</option>
-          <option value="circle">Circle</option>
-          <option value="infinity-h">Infinity ∞</option>
-          <option value="infinity-v">Infinity 8 (vertical)</option>
-        </select>
-        <input type="color" class="color">
+      <div class="title-bar" title="Drag to reorder">
+        <span class="pattern-name"></span>
         <button class="del" title="Remove">×</button>
       </div>
       <div class="row params">
+        <input type="color" class="color">
         <label>Repeats <input type="number" class="repeats" min="1" max="100" step="1"></label>
         <label class="direction-wrap">Direction
           <select class="direction">
