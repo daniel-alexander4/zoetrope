@@ -19,10 +19,15 @@
   </header>
 
   <main id="manage-body">
+    <!-- Surfaces a brief, polite live-region announcement right after a
+         connection string is minted, so the practitioner sees that
+         something happened even before scanning the session card below. -->
+    <div id="generated-banner" class="generated-banner" hidden role="status" aria-live="polite"></div>
+
     <!-- Standalone state: a single dominant CTA. This is what the
          user lands on after clicking "Hosting" on the ball page. -->
     <section id="start-card" hidden>
-      <h2>Start a hosting session</h2>
+      <h3>Start a hosting session</h3>
       <p>
         Generate a connection string for your client. The URL pins your
         practitioner identity, embeds a one-time client cert, and stays
@@ -32,11 +37,24 @@
       <div id="start-error" class="start-error"></div>
     </section>
 
-    <section id="identity-panel" hidden>
-      <h3>My identity</h3>
+    <!-- Hoisted above identity + editor: after quickstart, the fresh URL is
+         the thing the practitioner needs right now. -->
+    <section id="sessions" hidden>
+      <header>
+        <h3>Sessions</h3>
+        <button id="btn-new-session" title="Mint another connection string for a new client">+ Generate connection string</button>
+      </header>
+      <ol id="sessions-list"></ol>
+    </section>
+
+    <section id="identity-panel" hidden data-collapsed="true">
+      <header class="identity-header">
+        <h3>My identity</h3>
+        <button id="identity-toggle" class="ghost-toggle" aria-expanded="false">Show full</button>
+      </header>
       <div class="identity-row">
         <span class="identity-label">Fingerprint</span>
-        <code id="practitioner-fp">—</code>
+        <code id="practitioner-fp" data-full="">—</code>
         <button class="copy-btn" data-copy="practitioner-fp" title="Copy fingerprint">Copy</button>
       </div>
       <div class="identity-row">
@@ -68,11 +86,18 @@
           Lead frac <input type="number" id="linger-lead-input" min="0" max="1" step="0.05">
         </label>
       </div>
+      <div class="global" title="Label each gaze position on the canvas during position-sequence patterns. Off for live sessions; on while learning the grid.">
+        <label>
+          <input type="checkbox" id="show-position-labels"> Show position labels
+        </label>
+      </div>
       <ol id="playlist"></ol>
       <footer class="editor-footer">
         <button id="btn-save">Save</button>
         <button id="btn-revert">Revert</button>
         <span id="save-status"></span>
+        <span id="save-hint" class="save-hint" hidden></span>
+        <span class="safety-note">For use with a qualified practitioner. Not a treatment in itself.</span>
       </footer>
     </section>
 
@@ -94,17 +119,22 @@
           <label class="angle-wrap">Angle°
             <input type="number" class="angle" min="0" max="359" step="1">
           </label>
+          <label class="iemt-wrap iemt-name-wrap">Name
+            <input type="text" class="iemt-name" placeholder="(custom label)">
+          </label>
+          <label class="iemt-wrap">Dwell s
+            <input type="number" class="dwell-sec" min="0.1" max="10" step="0.1">
+          </label>
+          <label class="iemt-wrap">Transit s
+            <input type="number" class="transit-sec" min="0.1" max="10" step="0.1">
+          </label>
+        </div>
+        <div class="row iemt-wrap iemt-steps-row">
+          <ol class="step-list"></ol>
+          <select class="add-step"></select>
         </div>
       </li>
     </template>
-
-    <section id="sessions" hidden>
-      <header>
-        <h3>Sessions</h3>
-        <button id="btn-new-session" title="Mint another connection string for a new client">+ Generate connection string</button>
-      </header>
-      <ol id="sessions-list"></ol>
-    </section>
   </main>
 
   <template id="session-template">

@@ -64,8 +64,9 @@
       editor.hidden = false;
       sessions.hidden = false;
       stopBtn.hidden = false;
-      document.getElementById('practitioner-fp').textContent = snap.practitioner_fp || '—';
+      document.getElementById('practitioner-fp').dataset.full = snap.practitioner_fp || '';
       document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
+      refreshIdentityDisplay();
       renderSessions(snap.sessions || []);
     } else { // standalone
       startCard.hidden = false;
@@ -77,6 +78,51 @@
       document.getElementById('sessions-list').innerHTML = '';
       document.getElementById('start-error').textContent = '';
     }
+  }
+
+  // ---- Identity collapse / expand ------------------------------------
+  //
+  // The fingerprint is 64 hex chars — useful for verification but visually
+  // overwhelming when the practitioner first lands in manager mode. Show
+  // a 12-char head + ellipsis + 4-char tail by default; one click reveals
+  // the full hex. Endpoint is short enough to render in full always.
+
+  function refreshIdentityDisplay() {
+    const fpEl = document.getElementById('practitioner-fp');
+    const collapsed = document.getElementById('identity-panel').dataset.collapsed === 'true';
+    const full = fpEl.dataset.full || '';
+    if (!full) { fpEl.textContent = '—'; return; }
+    fpEl.textContent = collapsed ? truncateHash(full, 12, 4) : full;
+  }
+
+  function truncateHash(s, head, tail) {
+    if (s.length <= head + tail + 1) return s;
+    return s.slice(0, head) + '…' + s.slice(-tail);
+  }
+
+  function setIdentityCollapsed(collapsed) {
+    const panel = document.getElementById('identity-panel');
+    const toggle = document.getElementById('identity-toggle');
+    panel.dataset.collapsed = collapsed ? 'true' : 'false';
+    toggle.textContent = collapsed ? 'Show full' : 'Hide full';
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    refreshIdentityDisplay();
+  }
+
+  document.getElementById('identity-toggle').addEventListener('click', () => {
+    const cur = document.getElementById('identity-panel').dataset.collapsed === 'true';
+    setIdentityCollapsed(!cur);
+  });
+
+  // ---- "Connection string generated" banner --------------------------
+
+  let generatedBannerTimer = null;
+  function flashGeneratedBanner() {
+    const b = document.getElementById('generated-banner');
+    b.textContent = 'Connection string generated — copy it below and share with your client.';
+    b.hidden = false;
+    if (generatedBannerTimer) clearTimeout(generatedBannerTimer);
+    generatedBannerTimer = setTimeout(() => { b.hidden = true; }, 6000);
   }
 
   // ---- Sessions list -------------------------------------------------
@@ -121,6 +167,9 @@
     const el = entry.node.querySelector('.session-status');
     el.textContent = status;
     el.dataset.status = status;
+    // Keep snap.connected in sync so the save-hint logic in the editor
+    // callback can read it directly.
+    entry.snap.connected = (status === 'connected');
   }
 
   function setSessionLabel(fp, label) {
@@ -187,6 +236,7 @@
     try {
       const { url, session } = await networkQuickstart();
       addSessionToList(session, url);
+      flashGeneratedBanner();
     } catch (err) {
       const msg = err.message || String(err);
       if (errEl) errEl.textContent = msg;
@@ -289,8 +339,22 @@
     onJump: () => {},
     onFieldReset: () => {},
     onFieldLoopToggle: () => {},
-    // No drawer to close after save — the editor is in the page flow.
-    onSaveCloseEditor: () => {},
+    // No drawer to close after save; instead, if the practitioner saves
+    // while a client is connected, surface the "doesn't propagate to
+    // active sessions" caveat. Mid-session live push is a deferred item.
+    onSaveCloseEditor: () => {
+      const hasConnected = [...state.sessions.values()].some(e => e.snap.connected);
+      const hint = document.getElementById('save-hint');
+      if (!hint) return;
+      if (hasConnected) {
+        hint.textContent = 'Saved — applies to the next client connect. Active sessions keep their existing config.';
+        hint.hidden = false;
+        if (hint._t) clearTimeout(hint._t);
+        hint._t = setTimeout(() => { hint.hidden = true; }, 8000);
+      } else {
+        hint.hidden = true;
+      }
+    },
   });
 
   // ---- Init -----------------------------------------------------------
