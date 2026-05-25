@@ -4,5 +4,4 @@ Name=Zoetrope
 Comment=A bouncing-ball pattern animator
 Exec=zoetrope
 Icon=zoetrope
-Categories=Graphics;Utility;
 Terminal=false
