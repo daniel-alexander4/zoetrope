@@ -146,6 +146,17 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 		modes.Standalone()
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	mux.HandleFunc("POST /api/mode/loopback", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		// Development-only: engage manager mode with a synthetic in-process
+		// session so /manage and /?loopback can exercise the entire
+		// protocol surface on one machine. No external listener, no cert
+		// pinning, no public IP detect.
+		if err := modes.Loopback(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
 
 	mux.HandleFunc("POST /api/sessions", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
 		clientID := readOptionalClientID(r)

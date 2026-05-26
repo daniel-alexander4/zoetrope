@@ -25,6 +25,11 @@ const (
 	modeManager    = "manager"
 	modeClient     = "client"
 
+	// loopbackSessionFP is the well-known fingerprint of the synthetic
+	// session created by Loopback(). Verb / state / file routing checks
+	// this so frames short-circuit through the bus instead of a (nil) WS.
+	loopbackSessionFP = "loopback"
+
 	// Hardcoded so practitioners never have to think about ports. The
 	// router-side port-forward and the client-side URL both assume this.
 	managerHardcodedPort = "38130"
@@ -53,6 +58,11 @@ type session struct {
 	label   string
 	wsConn  *websocket.Conn
 	nextSeq uint64
+
+	// loopback is true for the synthetic session created by Loopback().
+	// Routing branches in SendVerb / writeTransfer / Snapshot test this
+	// instead of poking at fields the WS path would mutate.
+	loopback bool
 }
 
 // closeWS closes the WS connection if any, holding the session lock so
@@ -166,7 +176,7 @@ func (m *modeState) Snapshot() modeSnapshot {
 		snap.Sessions = append(snap.Sessions, sessionSnapshot{
 			Fingerprint: fp,
 			Label:       s.label,
-			Connected:   s.wsConn != nil,
+			Connected:   s.wsConn != nil || s.loopback,
 			CreatedAt:   s.createdAt,
 			ClientID:    m.sessionClients[fp],
 		})
@@ -293,6 +303,60 @@ func (m *modeState) Host(req hostRequest) error {
 	}()
 
 	m.bus.Publish("mode-change", m.Snapshot())
+	return nil
+}
+
+// Loopback enters a development-only mode where one binary plays both
+// sides locally: backend is in manager mode (no external listener) with
+// a synthetic session whose verbs / state / file transfer round-trip
+// through the SSE bus instead of an mTLS WebSocket. The /manage tab and
+// a /?loopback tab share the same Go process and exchange the entire
+// protocol surface so /scrutinize and /tshoot can exercise it on one
+// machine. No public IP, no cert, no port-forward.
+func (m *modeState) Loopback() error {
+	idPath, err := practitionerIdentityPath(m.appName)
+	if err != nil {
+		return fmt.Errorf("identity path: %w", err)
+	}
+	id, err := loadOrCreatePractitionerIdentity(idPath)
+	if err != nil {
+		return fmt.Errorf("practitioner identity: %w", err)
+	}
+
+	m.mu.Lock()
+	if m.current != modeStandalone {
+		m.mu.Unlock()
+		return fmt.Errorf("already in %s mode", m.current)
+	}
+	now := time.Now()
+	sess := &session{
+		certFP:    loopbackSessionFP,
+		createdAt: now,
+		label:     "loopback (dev)",
+		loopback:  true,
+	}
+	m.practitioner = id
+	m.publicEP = ""
+	m.listenAddr = ""
+	m.current = modeManager
+	m.enteredAt = now
+	m.lastClientEvent = now
+	m.sessions[loopbackSessionFP] = sess
+	m.mu.Unlock()
+
+	m.bus.Publish("mode-change", m.Snapshot())
+	m.bus.Publish("session-created", sessionSnapshot{
+		Fingerprint: loopbackSessionFP,
+		Label:       "loopback (dev)",
+		Connected:   true,
+		CreatedAt:   now,
+	})
+	m.bus.Publish("session-connected", sessionSnapshot{
+		Fingerprint: loopbackSessionFP,
+		Label:       "loopback (dev)",
+		Connected:   true,
+		CreatedAt:   now,
+	})
 	return nil
 }
 
@@ -650,6 +714,9 @@ func (m *modeState) BroadcastConfig() {
 }
 
 // SendVerb forwards a manager-UI verb to the session's WS as a frame.
+// For the synthetic loopback session, instead of writing to a (nil) WS
+// the verb is published on the local SSE bus as a network-verb event so
+// the in-tab "client" picks it up identically to the network path.
 func (m *modeState) SendVerb(fp string, verb json.RawMessage) error {
 	sess := m.lookupSession(fp)
 	if sess == nil {
@@ -659,8 +726,9 @@ func (m *modeState) SendVerb(fp string, verb json.RawMessage) error {
 	conn := sess.wsConn
 	sess.nextSeq++
 	seq := sess.nextSeq
+	loopback := sess.loopback
 	sess.mu.Unlock()
-	if conn == nil {
+	if conn == nil && !loopback {
 		return errors.New("session not connected")
 	}
 
@@ -668,10 +736,21 @@ func (m *modeState) SendVerb(fp string, verb json.RawMessage) error {
 	if err := json.Unmarshal(verb, &msg); err != nil {
 		return fmt.Errorf("decode verb: %w", err)
 	}
-	if _, ok := msg["type"].(string); !ok {
+	verbType, ok := msg["type"].(string)
+	if !ok {
 		return errors.New("verb missing 'type'")
 	}
 	msg["seq"] = seq
+
+	if loopback {
+		stamped, _ := json.Marshal(msg)
+		m.bus.Publish("network-verb", map[string]any{
+			"type":  verbType,
+			"seq":   seq,
+			"frame": json.RawMessage(stamped),
+		})
+		return nil
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -935,20 +1014,36 @@ func (m *modeState) handleInboundTransferFrame(verb string, raw []byte, sourceFP
 }
 
 // ClientSend forwards an arbitrary message from the local browser
-// (state, sequences, etc.) to the manager. Only valid in client mode.
+// (state, sequences, etc.) to the manager. Valid in client mode (writes
+// to the manager WS) or while a loopback session exists (publishes the
+// equivalent session-* event on the local bus so the in-tab manager UI
+// picks it up identically to the network path).
 func (m *modeState) ClientSend(msg map[string]any) error {
 	m.mu.Lock()
 	conn := m.clientConn
 	mode := m.current
+	loopback := m.sessions[loopbackSessionFP] != nil
 	m.mu.Unlock()
+	verbType, ok := msg["type"].(string)
+	if !ok {
+		return errors.New("message missing 'type'")
+	}
+	if loopback {
+		raw, err := json.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("marshal: %w", err)
+		}
+		m.bus.Publish("session-"+verbType, map[string]any{
+			"fingerprint": loopbackSessionFP,
+			"payload":     json.RawMessage(raw),
+		})
+		return nil
+	}
 	if mode != modeClient {
 		return errors.New("not in client mode")
 	}
 	if conn == nil {
 		return errors.New("not connected")
-	}
-	if _, ok := msg["type"].(string); !ok {
-		return errors.New("message missing 'type'")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

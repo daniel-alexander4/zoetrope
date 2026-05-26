@@ -38,8 +38,13 @@
       <div class="landing-actions">
         <button id="btn-start" class="primary-cta">Generate connection string</button>
         <button id="btn-enter-mi" class="primary-cta secondary" title="Engage hosting and open the Management Interface">Enter Management Interface →</button>
+        <button id="btn-loopback" class="primary-cta secondary" title="Dev mode: engage manager + a synthetic in-process client session for testing the protocol on one machine">Loopback (dev)</button>
       </div>
       <div id="start-error" class="start-error"></div>
+      <div id="loopback-hint" class="loopback-hint" hidden>
+        Loopback engaged. Open this URL in a second tab to act as the client:
+        <code id="loopback-url"></code>
+      </div>
     </section>
 
     <!-- Sessions card: Landing-only. Surfaces the minted URLs and the

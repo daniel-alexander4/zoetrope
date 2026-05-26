@@ -447,6 +447,35 @@
       () => { networkStandalone(); },
     );
   });
+  // Loopback (dev): engage manager mode with an in-process synthetic
+  // client session, then surface the /?loopback URL the practitioner
+  // pastes into a second tab to drive the client side. No public IP,
+  // no cert pin, no port-forward — purely a development affordance.
+  document.getElementById('btn-loopback').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const errEl = document.getElementById('start-error');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Engaging…';
+    errEl.textContent = '';
+    state.initialModeApplied = true;
+    try {
+      const r = await csrfFetch('/api/mode/loopback', { method: 'POST' });
+      if (!r.ok) throw new Error((await r.text()).trim() || 'loopback failed');
+      const hint = document.getElementById('loopback-hint');
+      const url = document.getElementById('loopback-url');
+      const loopURL = window.location.origin + '/?loopback';
+      url.textContent = loopURL;
+      hint.hidden = false;
+      setView('mi');
+    } catch (err) {
+      state.initialModeApplied = false;
+      errEl.textContent = err.message || String(err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
 
   // ---- Confirm overlay -----------------------------------------------
 

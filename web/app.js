@@ -17,6 +17,7 @@
     bounceStart: { x: 0, y: 0 },
     dirty: false,
     field: { t: 0, introT: 0, loopT: 0 },
+    loopback: false, // /?loopback dev mode pins this tab to client view
   };
 
   // ---- Field palettes ---------------------------------------------------
@@ -902,6 +903,10 @@
   }
 
   function applyNetworkMode(snap) {
+    // Loopback pins the UI to client view; ignore subsequent mode-change
+    // events which would otherwise flip the page back to whatever the
+    // backend reports (manager mode, in the loopback case).
+    if (state.loopback) return;
     const prev = state.nmode;
     state.nmode = snap.mode || 'standalone';
     document.body.classList.remove('nmode-standalone', 'nmode-manager', 'nmode-client');
@@ -1251,6 +1256,27 @@
   }
 
   async function initNetworkMode() {
+    // Dev-only loopback: when /?loopback is set, the backend is in
+    // manager mode with a synthetic in-process session and this tab
+    // plays the client role for testing. Skip /api/mode/state (its
+    // snap.mode would say "manager" and pull the UI the wrong way) and
+    // pin the client UI directly. SSE network-verb events still fire
+    // because Loopback() publishes them on the same bus this tab
+    // subscribes to.
+    if (new URLSearchParams(window.location.search).has('loopback')) {
+      state.loopback = true;
+      state.nmode = 'client';
+      document.body.classList.remove('nmode-standalone', 'nmode-manager', 'nmode-client');
+      document.body.classList.add('nmode-client');
+      const pill = document.getElementById('client-pill');
+      pill.dataset.state = 'loopback';
+      pill.textContent = 'LOOPBACK (dev)';
+      pushClientHello();
+      pushClientSequences();
+      pushClientState();
+      startEventSource();
+      return;
+    }
     try {
       const r = await fetch('/api/mode/state', { cache: 'no-store' });
       if (r.ok) applyNetworkMode(await r.json());
