@@ -75,7 +75,7 @@ func defaultConfig() Config {
 		ActivePlaylist: "Default",
 		Playlists: []NamedPlaylist{
 			{
-				Name: "Default", Category: "Continuous", Builtin: true,
+				Name: "Default", Category: "Continuous",
 				Items: []PlaylistItem{
 					{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},
 					{Pattern: "v-sweep", Color: "#f9e2af", Repeats: 3},
