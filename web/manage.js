@@ -242,8 +242,38 @@
     const idx = payload.item_idx ?? 0;
     const rep = payload.repeat_idx ?? 0;
     const pat = payload.pattern || '?';
-    entry.node.querySelector('.session-detail').textContent =
-      `${playing} item ${idx + 1}, rep ${rep + 1}, pattern ${pat}`;
+    let detail = `${playing} item ${idx + 1}, rep ${rep + 1}, pattern ${pat}`;
+    if (payload.step_count) {
+      const step = (payload.step_idx ?? 0) + 1;
+      detail += `, step ${step}/${payload.step_count}`;
+    }
+    entry.node.querySelector('.session-detail').textContent = detail;
+    setStepControlsMode(entry.node, pat === 'position-sequence');
+  }
+
+  // setStepControlsMode swaps the back/advance buttons between playlist-
+  // item level (continuous patterns) and position-step level (position-
+  // sequence patterns). Same buttons, different labels + dispatched
+  // verbs — the click handler in wireSessionNode reads dataset.verb at
+  // click time so updating it here is enough.
+  function setStepControlsMode(node, isSequence) {
+    const back = node.querySelector('.ctl-back');
+    const advance = node.querySelector('.ctl-advance');
+    if (isSequence) {
+      back.textContent = '← Prev pos';
+      back.title = 'Previous position';
+      back.dataset.verb = 'back-position';
+      advance.textContent = 'Next pos →';
+      advance.title = 'Next position';
+      advance.dataset.verb = 'advance-position';
+    } else {
+      back.textContent = '◀';
+      back.title = 'Start of current sequence';
+      back.dataset.verb = 'back';
+      advance.textContent = '▶▶';
+      advance.title = 'Next sequence';
+      advance.dataset.verb = 'advance';
+    }
   }
 
   function wireSessionNode(node, fp) {

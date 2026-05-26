@@ -675,6 +675,34 @@
     enterItem(i);
   }
 
+  // ---- Position-sequence step controls (IEMT manual override) ---------
+  // The position-sequence engine derives the current step from
+  // floor(state.t * steps.length). Snapping to a step boundary parks the
+  // ball at that position's dwell — used by "hold" (pause + snap) and by
+  // the step-level prev/next controls the manager UI sends as
+  // advance-position / back-position verbs.
+
+  function snapToCurrentStep() {
+    const item = currentItem();
+    if (!item || !isSequencePattern(item.pattern)) return;
+    const total = (item.steps || []).length;
+    if (total === 0) return;
+    const idx = Math.floor(state.t * total) % total;
+    state.t = idx / total;
+    state.lastFrameMs = 0;
+  }
+
+  function stepByPositions(delta) {
+    const item = currentItem();
+    if (!item || !isSequencePattern(item.pattern)) return;
+    const total = (item.steps || []).length;
+    if (total === 0) return;
+    const cur = Math.floor(state.t * total) % total;
+    const next = ((cur + delta) % total + total) % total;
+    state.t = next / total;
+    state.lastFrameMs = 0;
+  }
+
   function setPlayIcon(icon) {
     document.getElementById('btn-play').textContent = icon;
   }
@@ -707,8 +735,10 @@
       case 'back':         seekPatternStart(); break;
       case 'reset':        seekPlaylistStart(); break;
       case 'stop':         pause(); seekPlaylistStart(); break;
-      case 'hold':         /* IEMT only: freeze at current position */ break;
-      case 'release':      /* IEMT only: resume auto-advance */ break;
+      case 'hold':            pause(); snapToCurrentStep(); break;
+      case 'release':         play(); break;
+      case 'advance-position': stepByPositions(+1); break;
+      case 'back-position':    stepByPositions(-1); break;
       case 'jump':
       case 'set-sequence':
         if (Number.isInteger(verb.index)) jumpToItem(verb.index);
@@ -948,6 +978,11 @@
 
   function pushClientState() {
     const item = currentItem();
+    const isSeq = item && isSequencePattern(item.pattern);
+    const stepCount = isSeq ? (item.steps || []).length : null;
+    const stepIdx = isSeq && stepCount > 0
+      ? Math.floor(state.t * stepCount) % stepCount
+      : null;
     return csrfFetch('/api/network/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -957,6 +992,8 @@
         item_idx: state.itemIdx,
         repeat_idx: state.repeatIdx,
         pattern: item?.pattern || null,
+        step_idx: stepIdx,
+        step_count: stepCount,
       }),
     }).catch(()=>{});
   }
