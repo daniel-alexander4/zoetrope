@@ -664,6 +664,61 @@ body.mode-field .balls-only { display: none !important; }
   opacity: 0.7;
 }
 
+/* ---- Collapsible globals + read-only built-in playlists ----------- */
+
+.globals-collapsible {
+  margin: 4px 0 8px 0;
+}
+.globals-collapsible > summary {
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--subtext);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  background: var(--surface);
+  list-style: none;
+  user-select: none;
+}
+.globals-collapsible > summary::-webkit-details-marker { display: none; }
+.globals-collapsible > summary::before {
+  content: "▸ ";
+  color: var(--subtext);
+}
+.globals-collapsible[open] > summary::before {
+  content: "▾ ";
+}
+.globals-collapsible > summary:hover {
+  background: var(--overlay);
+  color: var(--text);
+}
+
+.readonly-banner {
+  margin: 4px 0 8px 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text);
+  background: color-mix(in oklab, var(--accent-2) 14%, var(--surface));
+  border: 1px solid var(--accent-2);
+  border-radius: 6px;
+}
+.readonly-banner[hidden] { display: none; }
+
+/* Built-in playlist items: render visually muted as a hint that they're
+   not editable. .readonly is set by editor.js's applyReadOnly(). */
+.item.readonly {
+  opacity: 0.75;
+  cursor: default;
+}
+.item.readonly .title-bar {
+  cursor: default;
+}
+.item.readonly input,
+.item.readonly select,
+.item.readonly button {
+  cursor: not-allowed;
+}
+
 /* ---- File transfer ------------------------------------------------- */
 
 .session-attach {

@@ -87,7 +87,7 @@
 
       <section id="editor-section" class="card" hidden>
         <header class="section-header">
-          <h3>Active playlist</h3>
+          <h3 id="active-playlist-title">Active playlist</h3>
           <select id="add-pattern" title="Add pattern">
             <option value="" disabled selected>+ Add…</option>
           </select>
@@ -95,28 +95,34 @@
         <p class="section-hint">
           Edit while you wait. The client receives this configuration when they connect; in-flight edits push live.
         </p>
-        <div class="global">
-          <label>Background <input type="color" id="bg-color"></label>
-          <label>Ball size <input type="number" id="ball-size" min="2" max="400" step="1"></label>
-          <label>Speed <input type="number" id="speed-input" min="0" max="10" step="0.1"></label>
+        <div id="readonly-banner" class="readonly-banner" hidden>
+          Built-in playlist — Duplicate to make an editable copy.
         </div>
-        <div class="global linger-group">
-          <span class="group-label">Linger</span>
-          <label>Seconds <input type="number" id="linger-input" min="0" max="10" step="0.1"></label>
-          <label title="How far the size pulse leads into adjacent motion">
-            Lead frac <input type="number" id="linger-lead-input" min="0" max="1" step="0.05">
-          </label>
-        </div>
-        <div class="global" title="Label each gaze position on the canvas during position-sequence patterns. Off for live sessions; on while learning the grid.">
-          <label>
-            <input type="checkbox" id="show-position-labels"> Show position labels
-          </label>
-        </div>
-        <div class="global" title="Largest file this machine will send or accept over a session. 0 disables file transfer.">
-          <label>Max transfer size (MiB)
-            <input type="number" id="max-transfer-mib" min="0" max="4096" step="1">
-          </label>
-        </div>
+        <details class="globals-collapsible">
+          <summary>Global settings</summary>
+          <div class="global">
+            <label>Background <input type="color" id="bg-color"></label>
+            <label>Ball size <input type="number" id="ball-size" min="2" max="400" step="1"></label>
+            <label>Speed <input type="number" id="speed-input" min="0" max="10" step="0.1"></label>
+          </div>
+          <div class="global linger-group">
+            <span class="group-label">Linger</span>
+            <label>Seconds <input type="number" id="linger-input" min="0" max="10" step="0.1"></label>
+            <label title="How far the size pulse leads into adjacent motion">
+              Lead frac <input type="number" id="linger-lead-input" min="0" max="1" step="0.05">
+            </label>
+          </div>
+          <div class="global" title="Label each gaze position on the canvas during position-sequence patterns. Off for live sessions; on while learning the grid.">
+            <label>
+              <input type="checkbox" id="show-position-labels"> Show position labels
+            </label>
+          </div>
+          <div class="global" title="Largest file this machine will send or accept over a session. 0 disables file transfer.">
+            <label>Max transfer size (MiB)
+              <input type="number" id="max-transfer-mib" min="0" max="4096" step="1">
+            </label>
+          </div>
+        </details>
         <ol id="playlist"></ol>
         <footer class="editor-footer">
           <button id="btn-save">Save</button>

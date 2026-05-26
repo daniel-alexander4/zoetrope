@@ -126,6 +126,8 @@
       const titleBar = node.querySelector('.title-bar');
       titleBar.addEventListener('mousedown', e => {
         if (e.target.closest('.del')) return;
+        // Built-in playlists are read-only — no drag-to-reorder.
+        if (node.classList.contains('readonly')) return;
         node.draggable = true;
         document.addEventListener('mouseup', () => { node.draggable = false; }, { once: true });
       });
@@ -170,6 +172,10 @@
       node.querySelector('.del').addEventListener('click', () => deleteItem(i));
       list.appendChild(node);
     });
+    // Re-apply read-only state. Item nodes were just rebuilt, so any
+    // disabled flags from a prior render are gone.
+    updateActivePlaylistTitle();
+    applyReadOnly();
   }
 
   function clearDropIndicators() {
@@ -277,7 +283,7 @@
 
   function reorderItem(fromIdx, insertAt) {
     const pl = currentPlaylist();
-    if (!pl) return;
+    if (!pl || pl.builtin) return;
     const arr = pl.items;
     if (fromIdx < 0 || fromIdx >= arr.length) return;
     if (insertAt === fromIdx || insertAt === fromIdx + 1) return;
@@ -292,7 +298,7 @@
 
   function deleteItem(i) {
     const pl = currentPlaylist();
-    if (!pl) return;
+    if (!pl || pl.builtin) return;
     pl.items.splice(i, 1);
     if (state.itemIdx != null) {
       if (state.itemIdx >= pl.items.length) {
@@ -310,7 +316,7 @@
   function addItem(pattern) {
     if (!PATTERN_LABELS[pattern]) return;
     const pl = currentPlaylist();
-    if (!pl) return;
+    if (!pl || pl.builtin) return;
     const defaults = PATTERN_DEFAULTS[pattern] || {};
     pl.items.push({ pattern, repeats: 3, ...defaults });
     markDirty();
@@ -566,6 +572,8 @@
     setVal('linger-lead-input', state.config.lingerLeadFrac ?? 0);
     setChecked('show-position-labels', !!state.config.showPositionLabels);
     setVal('max-transfer-mib', Math.round((state.config.maxTransferBytes ?? 0) / (1024 * 1024)));
+    updateActivePlaylistTitle();
+    applyReadOnly();
     if (state.config.field) {
       setVal('field-speed-input', state.config.field.speed ?? 3);
       setVal('field-palette-input', state.config.field.palette || 'Happy');
@@ -588,6 +596,46 @@
   function setChecked(id, v) {
     const el = document.getElementById(id);
     if (el) el.checked = v;
+  }
+
+  // updateActivePlaylistTitle keeps the #active-playlist-title h3 (on
+  // /manage's editor card) in sync with whichever playlist is active.
+  // The header on /'s drawer doesn't have this element — null-guarded.
+  function updateActivePlaylistTitle() {
+    const el = document.getElementById('active-playlist-title');
+    if (!el) return;
+    const cur = currentPlaylist();
+    el.textContent = cur ? 'Active playlist · ' + cur.name : 'Active playlist';
+  }
+
+  // applyReadOnly disables item-level editing affordances when the active
+  // playlist ships with the binary (`builtin === true`). The user must
+  // duplicate (lib-dup) to make an editable copy. Globals stay editable
+  // because they're not per-playlist. Saving still works — the user can
+  // change which playlist is active, edit the *picker*, etc.
+  function applyReadOnly() {
+    const cur = currentPlaylist();
+    const ro = !!(cur && cur.builtin);
+    const addSel = document.getElementById('add-pattern');
+    if (addSel) addSel.disabled = ro;
+    const banner = document.getElementById('readonly-banner');
+    if (banner) banner.hidden = !ro;
+    const rename = document.getElementById('lib-rename');
+    const del = document.getElementById('lib-del');
+    if (rename) rename.disabled = ro;
+    if (del) del.disabled = ro || ((state.config.playlists || []).length <= 1);
+    // Per-item controls inside the playlist:
+    document.querySelectorAll('#playlist .item').forEach(node => {
+      node.classList.toggle('readonly', ro);
+      node.querySelectorAll('input, select, button').forEach(el => {
+        // Save / Revert sit in the editor footer, not inside .item — fine
+        // to disable everything inside the item nodes here.
+        el.disabled = ro;
+      });
+      // HTML5 drag-and-drop hinges on `draggable=true` set during mousedown.
+      // ro items get a CSS class that the renderPlaylist mousedown handler
+      // checks before enabling drag.
+    });
   }
 
   function scheduleAutoSave() {

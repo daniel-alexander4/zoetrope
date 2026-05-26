@@ -26,7 +26,8 @@ type Config struct {
 
 type NamedPlaylist struct {
 	Name     string         `json:"name"`
-	Category string         `json:"category"` // grouping label in the picker (e.g. "Continuous", "IEMT", "EMDR")
+	Category string         `json:"category"`        // grouping label in the picker (e.g. "Continuous", "IEMT", "EMDR")
+	Builtin  bool           `json:"builtin,omitempty"` // ships in defaultConfig; read-only in the editor. Duplicate to make an editable copy.
 	Items    []PlaylistItem `json:"items"`
 }
 
@@ -74,7 +75,7 @@ func defaultConfig() Config {
 		ActivePlaylist: "Default",
 		Playlists: []NamedPlaylist{
 			{
-				Name: "Default", Category: "Continuous",
+				Name: "Default", Category: "Continuous", Builtin: true,
 				Items: []PlaylistItem{
 					{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},
 					{Pattern: "v-sweep", Color: "#f9e2af", Repeats: 3},
@@ -87,7 +88,7 @@ func defaultConfig() Config {
 				},
 			},
 			{
-				Name: "IEMT · Identity (draft)", Category: "IEMT",
+				Name: "IEMT · Identity (draft)", Category: "IEMT", Builtin: true,
 				Items: []PlaylistItem{
 					{
 						Pattern: "position-sequence", Name: "IEMT · Identity",
@@ -106,7 +107,7 @@ func defaultConfig() Config {
 				},
 			},
 			{
-				Name: "IEMT · Emotion (draft)", Category: "IEMT",
+				Name: "IEMT · Emotion (draft)", Category: "IEMT", Builtin: true,
 				Items: []PlaylistItem{
 					{
 						Pattern: "position-sequence", Name: "IEMT · Emotion",
