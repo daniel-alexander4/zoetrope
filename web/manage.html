@@ -64,7 +64,7 @@
          body.show-info reveals it; otherwise it stays hidden. Future
          audio / file-transfer / other panels join as additional cards. -->
     <div class="card-grid mi-only">
-      <section id="clients-card" class="card" hidden>
+      <section id="clients-card" class="card" data-views="admin" hidden>
         <header class="section-header">
           <h3>Clients</h3>
           <button id="btn-new-client" type="button" class="regen">+ New</button>
@@ -79,7 +79,7 @@
           <button id="btn-new-client-cancel" type="button" class="regen">Cancel</button>
         </div>
       </section>
-      <section id="library-card" class="card" hidden>
+      <section id="library-card" class="card" data-views="admin" hidden>
         <header class="section-header">
           <h3>Library</h3>
         </header>
@@ -105,7 +105,7 @@
         </div>
       </section>
 
-      <section id="editor-section" class="card" hidden>
+      <section id="editor-section" class="card" data-views="admin session" hidden>
         <header class="section-header">
           <h3 id="active-playlist-title">Active playlist</h3>
           <select id="add-pattern" title="Add pattern">
@@ -155,7 +155,7 @@
       <!-- Audio: bidirectional voice over WebRTC. Idle shows a hint
            pointing at the session-card 📞 button (calls are initiated
            there). Ringing / connecting / connected show controls. -->
-      <section id="audio-card" class="card" hidden>
+      <section id="audio-card" class="card" data-views="session" hidden>
         <header class="section-header">
           <h3>Audio</h3>
           <span id="audio-state-pill" class="audio-state-pill" data-state="idle">idle</span>
@@ -187,7 +187,7 @@
            an active session bound to the picked client; the inbox lives
            on disk under <clientDir>/inbox/ and survives across sessions
            and binary restarts. -->
-      <section id="files-card" class="card" hidden>
+      <section id="files-card" class="card" data-views="session" hidden>
         <header class="section-header">
           <h3>Files</h3>
           <select id="files-client-picker" title="Pick a client to send to / view received files"></select>
@@ -214,7 +214,7 @@
         </li>
       </template>
 
-      <section id="identity-panel" class="card identity-card" hidden data-collapsed="true">
+      <section id="identity-panel" class="card identity-card" data-views="admin" hidden data-collapsed="true">
         <header class="identity-header">
           <h3>My identity</h3>
           <button id="identity-toggle" class="ghost-toggle" aria-expanded="false">Show full</button>
@@ -261,6 +261,9 @@
          picker. -->
     <div id="mi-hud" class="mi-only">
       <button id="btn-show-gcs" type="button" class="hud-btn" title="Go to the Generate Connection String page">⇤ GCS</button>
+      <span class="hud-spacer"></span>
+      <button id="btn-show-admin" type="button" class="hud-btn" title="Admin — between-session work (clients, playlists, identity)">Admin</button>
+      <button id="btn-show-session" type="button" class="hud-btn" title="Live session — active playlist, audio, file transfer">Session</button>
       <span class="hud-spacer"></span>
       <button id="btn-show-info" type="button" class="hud-btn" title="Show / hide identity details" aria-pressed="false">Info</button>
     </div>

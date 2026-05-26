@@ -1398,12 +1398,27 @@ body.page-manage {
    (two CTAs — Generate / Enter MI) and MI (the operational card
    grid). Body carries one of these classes; CSS hides the other
    surface so the toggle is a single class swap with no JS layout work. */
+/* The MI grid splits internally into Admin (between-session work:
+   clients, library, identity, playlist editor) and Session (during-call
+   work: playlist editor, audio, file transfer). Body carries view-admin
+   or view-session inside the MI area; landing and client are top-level
+   peers. The grid container is shown in admin OR session and hidden in
+   landing / client; individual cards filter further via [data-views]. */
 body.view-landing .mi-only,
 body.view-landing .client-only,
-body.view-mi .landing-only,
-body.view-mi .client-only,
 body.view-client .landing-only,
-body.view-client .mi-only {
+body.view-client .mi-only,
+body.view-admin .landing-only,
+body.view-admin .client-only,
+body.view-session .landing-only,
+body.view-session .client-only {
+  display: none !important;
+}
+/* Per-card view filter: a card with data-views="admin" appears in
+   view-admin; "session" in view-session; "admin session" in both.
+   Cards missing the matching token in the current view are hidden. */
+body.view-admin .card[data-views]:not([data-views~="admin"]),
+body.view-session .card[data-views]:not([data-views~="session"]) {
   display: none !important;
 }
 
@@ -1510,7 +1525,7 @@ body.view-client .mi-only {
     grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
   }
 }
-body.view-mi.show-info #identity-panel {
+body.view-admin.show-info #identity-panel {
   grid-column: 1 / -1;
 }
 
@@ -1551,6 +1566,14 @@ body.view-mi.show-info #identity-panel {
   color: var(--base);
   border-color: var(--accent);
 }
+/* Admin/Session pair: the one matching the current view-class highlights
+   the same way Info does when pressed. */
+body.view-admin #btn-show-admin,
+body.view-session #btn-show-session {
+  background: var(--accent);
+  color: var(--base);
+  border-color: var(--accent);
+}
 
 /* .card primitive — shared surface for every card on /manage. The
    existing id-specific rules below carry the matching values; .card
@@ -1563,11 +1586,12 @@ body.view-mi.show-info #identity-panel {
   padding: 16px;
 }
 
-/* Identity card: hidden by default in MI; the HUD Info button toggles
-   body.show-info to reveal it. Landing-view hiding is already handled
-   by the .mi-only rule on .card-grid. */
+/* Identity card: admin-only (data-views="admin") and hidden by default
+   even there; the HUD Info button toggles body.show-info to reveal it.
+   Landing/client/session hiding is already handled by the data-views
+   rule on .card. */
 #identity-panel { display: none; }
-body.view-mi.show-info #identity-panel { display: block; }
+body.view-admin.show-info #identity-panel { display: block; }
 .copy-btn {
   background: var(--surface);
   color: var(--text);

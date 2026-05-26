@@ -1,11 +1,15 @@
-// manage.js: the /manage page — the hosting console. Lives between two
+// manage.js: the /manage page — the hosting console. Lives between four
 // in-page views (toggled by body class, no routing):
 //   - view-landing: the entry card with two CTAs (Generate / Enter MI),
 //     plus the sessions card surfacing minted URLs.
-//   - view-mi: the Management Interface — identity, sessions, editor
-//     cards in a grid. Future audio / file-transfer / other panels join
-//     the same grid as cards.
-// Client mode is meaningless here, so it redirects to the ball page.
+//   - view-admin: between-session work — Clients, Library, playlist
+//     editor (also visible in session), Identity.
+//   - view-session: during-call work — playlist editor, Audio, Files.
+//   - view-client: per-client detail page (notes + sessions timeline).
+// The single MI card grid hosts all cards; each carries data-views="..."
+// so CSS filters which cards a given view shows (one DOM, one drag
+// order — see styles.css for the filter rules). Client mode at the
+// network level is meaningless here, so it redirects to the ball page.
 
 (() => {
   'use strict';
@@ -13,7 +17,7 @@
   const state = {
     nmode: 'standalone',
     sessions: new Map(), // fp → { node, snap }
-    view: 'landing',     // 'landing' | 'mi' | 'client'
+    view: 'landing',     // 'landing' | 'admin' | 'session' | 'client'
     initialModeApplied: false,
     clientID: null,      // which client view-client is currently showing
     clients: [],         // cached summary list (refreshed on entering MI)
@@ -55,9 +59,10 @@
   // their next MI visit.
   function setView(view) {
     state.view = view;
-    document.body.classList.remove('view-landing', 'view-mi', 'view-client');
+    document.body.classList.remove('view-landing', 'view-admin', 'view-session', 'view-client');
     document.body.classList.add('view-' + view);
-    if (view !== 'mi') {
+    if (view !== 'admin') {
+      // Show-info only makes sense in Admin (where Identity lives).
       document.body.classList.remove('show-info');
       const info = document.getElementById('btn-show-info');
       if (info) info.setAttribute('aria-pressed', 'false');
@@ -66,6 +71,9 @@
       // Drop the per-view client cursor so re-entering Clients starts fresh.
       state.clientID = null;
     }
+    // Card-visibility changed; recompute editor row-span so it covers
+    // the cards currently visible in the new view.
+    updateEditorSpan();
   }
 
   function applyMode(snap) {
@@ -108,13 +116,14 @@
       refreshIdentityDisplay();
       renderSessions(snap.sessions || []);
       // On first paint only, pick the view from session state: existing
-      // sessions → MI (the user is returning to a live setup); no
+      // sessions → Admin (the user is returning to a live setup; Admin
+      // is the operational home, Session is one HUD click away); no
       // sessions → Landing (the user chose to start fresh). Subsequent
       // mode snapshots never auto-pivot — view changes are driven by
-      // explicit clicks (Enter MI / ← Landing) so generating a URL from
-      // Landing doesn't yank the user out of Landing.
+      // explicit clicks (Enter MI / ← Landing / Admin / Session) so
+      // generating a URL from Landing doesn't yank the user away.
       if (!state.initialModeApplied) {
-        setView((snap.sessions && snap.sessions.length) ? 'mi' : 'landing');
+        setView((snap.sessions && snap.sessions.length) ? 'admin' : 'landing');
       }
     } else { // standalone
       library.hidden = true;
@@ -367,7 +376,7 @@
       const label = entry?.node.querySelector('.session-label').textContent || fp.slice(0, 12);
       try {
         await audio.startCall(fp, label);
-        setView('mi'); // active call lives in MI; flip the user there so they see status
+        setView('session'); // Audio card lives in Session — flip the user there so they see status
       } catch (err) {
         console.warn('call failed:', err);
         alert('Call failed: ' + err.message);
@@ -404,12 +413,12 @@
   });
   document.getElementById('btn-enter-mi').addEventListener('click', async e => {
     if (state.nmode === 'manager') {
-      setView('mi');
+      setView('admin');
       return;
     }
     // Standalone → engage manager mode first, then pivot. Pre-set
     // initialModeApplied so applyMode's first-paint heuristic doesn't
-    // overwrite our explicit setView('mi') with its session-count pick.
+    // overwrite our explicit setView('admin') with its session-count pick.
     const btn = e.currentTarget;
     const errEl = document.getElementById('start-error');
     btn.disabled = true;
@@ -424,7 +433,7 @@
         body: '{}',
       });
       if (!r.ok) throw new Error((await r.text()).trim() || 'host failed');
-      setView('mi');
+      setView('admin');
     } catch (err) {
       state.initialModeApplied = false;
       errEl.textContent = err.message || String(err);
@@ -435,6 +444,12 @@
   });
   document.getElementById('btn-show-gcs').addEventListener('click', () => {
     setView('landing');
+  });
+  document.getElementById('btn-show-admin').addEventListener('click', () => {
+    setView('admin');
+  });
+  document.getElementById('btn-show-session').addEventListener('click', () => {
+    setView('session');
   });
   document.getElementById('btn-show-info').addEventListener('click', e => {
     const on = !document.body.classList.contains('show-info');
@@ -467,7 +482,7 @@
       const loopURL = window.location.origin + '/?loopback';
       url.textContent = loopURL;
       hint.hidden = false;
-      setView('mi');
+      setView('admin');
     } catch (err) {
       state.initialModeApplied = false;
       errEl.textContent = err.message || String(err);
@@ -572,9 +587,10 @@
             || (ev.fingerprint || '').slice(0, 12);
           // On incoming offer to an idle practitioner, flip to MI so the
           // call surface is visible. Other verbs land in whatever view
-          // the practitioner is already in.
+          // the practitioner is already in. Audio surfaces live in
+          // Session, so an incoming offer flips them there.
           if (verb === 'audio-offer' && window.zoetropeAudio.getState().state === 'idle') {
-            setView('mi');
+            setView('session');
           }
           window.zoetropeAudio.handleSignal(payload, ev.fingerprint, label);
         } catch (err) { console.error(err); }
@@ -809,7 +825,7 @@
     // Flush any pending autosave before leaving.
     clearTimeout(state.notesTimer);
     if (state.clientID) await saveClientNotes();
-    setView('mi');
+    setView('admin'); // Clients card lives in Admin
     refreshClientsList();
   });
 
@@ -1020,20 +1036,26 @@
   // cards stack tightly in one column while the editor extends down the
   // other. Without this, the editor's natural height forces its single
   // grid row to be tall and any small card sharing the row gets a gap
-  // below it — and N "small" cards never stack adjacent to it.
+  // below it.
+  //
+  // Visibility check uses `offsetParent`: a card is "visible" iff it's
+  // not display:none — which catches both the JS-controlled `hidden`
+  // attribute AND the CSS `[data-views]` filter that hides cards not
+  // in the current view (admin vs session).
   //
   // Triggers: init (after restore + wire), after each drop reorders DOM,
-  // and after applyMode flips card hidden states.
+  // after applyMode flips hidden states, and after setView switches the
+  // view (different cards become visible).
   function updateEditorSpan() {
     const grid = document.querySelector('.card-grid.mi-only');
     const editor = document.getElementById('editor-section');
     if (!grid || !editor) return;
-    if (editor.hidden) { editor.style.gridRow = ''; return; }
+    if (editor.offsetParent === null) { editor.style.gridRow = ''; return; }
     let n = 0;
     for (const c of grid.children) {
       if (c === editor) continue;
       if (c.id === 'identity-panel') continue; // spans full row via its own rule
-      if (c.hidden) continue;
+      if (c.offsetParent === null) continue;
       n++;
     }
     editor.style.gridRow = n > 0 ? 'span ' + n : '';
