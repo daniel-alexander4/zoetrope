@@ -308,8 +308,14 @@
 
   // ---- Animation --------------------------------------------------------
 
+  function currentPlaylist() {
+    const cfg = state.config;
+    const playlists = cfg?.playlists || [];
+    return playlists.find(p => p.name === cfg?.activePlaylist) || playlists[0];
+  }
+
   function currentItem() {
-    return state.config?.playlist?.[state.itemIdx];
+    return currentPlaylist()?.items?.[state.itemIdx];
   }
 
   function enterItem(idx) {
@@ -347,7 +353,7 @@
       state.t -= 1;
       state.repeatIdx += 1;
       if (state.repeatIdx >= (item.repeats || 1)) {
-        const next = (state.itemIdx + 1) % state.config.playlist.length;
+        const next = (state.itemIdx + 1) % currentPlaylist().items.length;
         enterItem(next);
         return;
       }
@@ -659,11 +665,12 @@
   }
   function nextPattern() {
     state.lastFrameMs = 0;
-    const len = state.config?.playlist?.length || 1;
+    const len = currentPlaylist()?.items?.length || 1;
     enterItem((state.itemIdx + 1) % len);
   }
   function jumpToItem(i) {
-    if (i < 0 || i >= state.config.playlist.length) return;
+    const items = currentPlaylist()?.items || [];
+    if (i < 0 || i >= items.length) return;
     state.lastFrameMs = 0;
     enterItem(i);
   }
@@ -676,7 +683,7 @@
     const el = document.getElementById('now-playing');
     const item = currentItem();
     if (!item) { el.textContent = ''; return; }
-    const total = state.config.playlist.length;
+    const total = currentPlaylist()?.items?.length || 0;
     el.textContent = `${state.itemIdx + 1}/${total} · ${item.pattern} · rep ${state.repeatIdx + 1}/${item.repeats}`;
   }
 
@@ -791,6 +798,7 @@
       document.getElementById('editor').classList.add('hidden');
       hideHud();
     },
+    onConfirm: confirmAction,
   });
 
   // ---- Auto-hide HUD when mouse is idle --------------------------------
@@ -916,10 +924,10 @@
   }
 
   function pushClientSequences() {
-    const seqs = (state.config?.playlist || []).map((item, idx) => ({
+    const seqs = (currentPlaylist()?.items || []).map((item, idx) => ({
       index: idx,
       pattern: item.pattern,
-      label: PATTERN_LABELS[item.pattern] || item.pattern,
+      label: item.name || PATTERN_LABELS[item.pattern] || item.pattern,
     }));
     return csrfFetch('/api/network/send', {
       method: 'POST',

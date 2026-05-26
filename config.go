@@ -11,15 +11,22 @@ import (
 )
 
 type Config struct {
-	Mode               string         `json:"mode"` // "balls" or "field"
-	Background         string         `json:"background"`
-	BallSize           float64        `json:"ballSize"`
-	Speed              float64        `json:"speed"`              // 0-10 scale; 10 = 1 cycle/sec for continuous patterns; for position-sequence patterns, 2 = nominal (configured) timings, higher = faster
-	LingerSec          float64        `json:"lingerSec"`          // dwell at each extreme of a linear sweep; 0 = off
-	LingerLeadFrac     float64        `json:"lingerLeadFrac"`     // how far the size pulse leads into adjacent motion, as a fraction of min(L, half); 0 = pulse confined to dwell
-	ShowPositionLabels bool           `json:"showPositionLabels"` // when on, position-sequence patterns draw small labels at each gaze grid point
-	Field              FieldConfig    `json:"field"`
-	Playlist           []PlaylistItem `json:"playlist"`
+	Mode               string          `json:"mode"` // "balls" or "field"
+	Background         string          `json:"background"`
+	BallSize           float64         `json:"ballSize"`
+	Speed              float64         `json:"speed"`              // 0-10 scale; 10 = 1 cycle/sec for continuous patterns; for position-sequence patterns, 2 = nominal (configured) timings, higher = faster
+	LingerSec          float64         `json:"lingerSec"`          // dwell at each extreme of a linear sweep; 0 = off
+	LingerLeadFrac     float64         `json:"lingerLeadFrac"`     // how far the size pulse leads into adjacent motion, as a fraction of min(L, half); 0 = pulse confined to dwell
+	ShowPositionLabels bool            `json:"showPositionLabels"` // when on, position-sequence patterns draw small labels at each gaze grid point
+	Field              FieldConfig     `json:"field"`
+	Playlists          []NamedPlaylist `json:"playlists"`
+	ActivePlaylist     string          `json:"activePlaylist"` // name of the playlist the engine plays; falls back to playlists[0] when missing
+}
+
+type NamedPlaylist struct {
+	Name     string         `json:"name"`
+	Category string         `json:"category"` // grouping label in the picker (e.g. "Continuous", "IEMT", "EMDR")
+	Items    []PlaylistItem `json:"items"`
 }
 
 type FieldConfig struct {
@@ -62,37 +69,53 @@ func defaultConfig() Config {
 			Shape:            "circles",
 			ShapeDurationSec: 12,
 		},
-		Playlist: []PlaylistItem{
-			{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},
-			{Pattern: "v-sweep", Color: "#f9e2af", Repeats: 3},
-			{Pattern: "diag-ulbr", Color: "#fab387", Repeats: 3},
-			{Pattern: "diag-urbl", Color: "#eba0ac", Repeats: 3},
-			{Pattern: "circle", Color: "#a6e3a1", Repeats: 3, Direction: "cw"},
-			{Pattern: "infinity-h", Color: "#89b4fa", Repeats: 3, Direction: "cw"},
-			{Pattern: "infinity-v", Color: "#cba6f7", Repeats: 3, Direction: "cw"},
-			{Pattern: "bounce", Color: "#f38ba8", Repeats: 1, AngleDeg: 37},
+		ActivePlaylist: "Default",
+		Playlists: []NamedPlaylist{
 			{
-				Pattern: "position-sequence", Name: "IEMT · Identity",
-				Color: "#b4befe", Repeats: 1, DwellSec: 1.5, TransitSec: 0.8,
-				Steps: []SequenceStep{
-					{Position: "up"}, {Position: "center"},
-					{Position: "down"}, {Position: "center"},
-					{Position: "lateral-l"}, {Position: "center"},
-					{Position: "lateral-r"}, {Position: "center"},
-					{Position: "up-l"}, {Position: "center"},
-					{Position: "up-r"}, {Position: "center"},
-					{Position: "down-l"}, {Position: "center"},
-					{Position: "down-r"}, {Position: "center"},
+				Name: "Default", Category: "Continuous",
+				Items: []PlaylistItem{
+					{Pattern: "h-sweep", Color: "#f5e0dc", Repeats: 3},
+					{Pattern: "v-sweep", Color: "#f9e2af", Repeats: 3},
+					{Pattern: "diag-ulbr", Color: "#fab387", Repeats: 3},
+					{Pattern: "diag-urbl", Color: "#eba0ac", Repeats: 3},
+					{Pattern: "circle", Color: "#a6e3a1", Repeats: 3, Direction: "cw"},
+					{Pattern: "infinity-h", Color: "#89b4fa", Repeats: 3, Direction: "cw"},
+					{Pattern: "infinity-v", Color: "#cba6f7", Repeats: 3, Direction: "cw"},
+					{Pattern: "bounce", Color: "#f38ba8", Repeats: 1, AngleDeg: 37},
 				},
 			},
 			{
-				Pattern: "position-sequence", Name: "IEMT · Emotion",
-				Color: "#f5c2e7", Repeats: 1, DwellSec: 1.5, TransitSec: 0.8,
-				Steps: []SequenceStep{
-					{Position: "up"}, {Position: "up-r"},
-					{Position: "lateral-r"}, {Position: "down-r"},
-					{Position: "down"}, {Position: "down-l"},
-					{Position: "lateral-l"}, {Position: "up-l"},
+				Name: "IEMT · Identity (draft)", Category: "IEMT",
+				Items: []PlaylistItem{
+					{
+						Pattern: "position-sequence", Name: "IEMT · Identity",
+						Color: "#b4befe", Repeats: 1, DwellSec: 1.5, TransitSec: 0.8,
+						Steps: []SequenceStep{
+							{Position: "up"}, {Position: "center"},
+							{Position: "down"}, {Position: "center"},
+							{Position: "lateral-l"}, {Position: "center"},
+							{Position: "lateral-r"}, {Position: "center"},
+							{Position: "up-l"}, {Position: "center"},
+							{Position: "up-r"}, {Position: "center"},
+							{Position: "down-l"}, {Position: "center"},
+							{Position: "down-r"}, {Position: "center"},
+						},
+					},
+				},
+			},
+			{
+				Name: "IEMT · Emotion (draft)", Category: "IEMT",
+				Items: []PlaylistItem{
+					{
+						Pattern: "position-sequence", Name: "IEMT · Emotion",
+						Color: "#f5c2e7", Repeats: 1, DwellSec: 1.5, TransitSec: 0.8,
+						Steps: []SequenceStep{
+							{Position: "up"}, {Position: "up-r"},
+							{Position: "lateral-r"}, {Position: "down-r"},
+							{Position: "down"}, {Position: "down-l"},
+							{Position: "lateral-l"}, {Position: "up-l"},
+						},
+					},
 				},
 			},
 		},

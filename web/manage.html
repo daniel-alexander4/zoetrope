@@ -91,12 +91,27 @@
           <input type="checkbox" id="show-position-labels"> Show position labels
         </label>
       </div>
+      <div class="global library-row">
+        <span class="group-label">Library</span>
+        <select id="playlist-picker" title="Active playlist (the one pushed to clients on connect or active-session switch)"></select>
+        <button id="lib-new" type="button" class="regen" title="New playlist">+</button>
+        <button id="lib-rename" type="button" class="regen" title="Rename / recategorize">✎</button>
+        <button id="lib-dup" type="button" class="regen" title="Duplicate">⎘</button>
+        <button id="lib-del" type="button" class="regen" title="Delete playlist">🗑</button>
+      </div>
+      <div id="library-edit" class="global library-edit hidden">
+        <input type="text" id="lib-name" placeholder="Playlist name">
+        <label>Category
+          <select id="lib-category"></select>
+        </label>
+        <button id="lib-ok" type="button" class="regen">OK</button>
+        <button id="lib-cancel" type="button" class="regen">Cancel</button>
+      </div>
       <ol id="playlist"></ol>
       <footer class="editor-footer">
         <button id="btn-save">Save</button>
         <button id="btn-revert">Revert</button>
         <span id="save-status"></span>
-        <span id="save-hint" class="save-hint" hidden></span>
         <span class="safety-note">For use with a qualified practitioner. Not a treatment in itself.</span>
       </footer>
     </section>

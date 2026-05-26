@@ -167,9 +167,6 @@
     const el = entry.node.querySelector('.session-status');
     el.textContent = status;
     el.dataset.status = status;
-    // Keep snap.connected in sync so the save-hint logic in the editor
-    // callback can read it directly.
-    entry.snap.connected = (status === 'connected');
   }
 
   function setSessionLabel(fp, label) {
@@ -334,27 +331,15 @@
   // ---- Editor (shared module from editor.js) ------------------------
 
   window.zoetropeEditor.init(state, {
-    // No animation engine on /manage — these hooks are no-ops.
+    // No animation engine on /manage — these hooks are no-ops. Saves
+    // now propagate live to connected sessions (server-side broadcast
+    // on configStore.Set), so no post-save warning is needed here.
     onEnterItem: () => {},
     onJump: () => {},
     onFieldReset: () => {},
     onFieldLoopToggle: () => {},
-    // No drawer to close after save; instead, if the practitioner saves
-    // while a client is connected, surface the "doesn't propagate to
-    // active sessions" caveat. Mid-session live push is a deferred item.
-    onSaveCloseEditor: () => {
-      const hasConnected = [...state.sessions.values()].some(e => e.snap.connected);
-      const hint = document.getElementById('save-hint');
-      if (!hint) return;
-      if (hasConnected) {
-        hint.textContent = 'Saved — applies to the next client connect. Active sessions keep their existing config.';
-        hint.hidden = false;
-        if (hint._t) clearTimeout(hint._t);
-        hint._t = setTimeout(() => { hint.hidden = true; }, 8000);
-      } else {
-        hint.hidden = true;
-      }
-    },
+    onSaveCloseEditor: () => {},
+    onConfirm: confirmAction,
   });
 
   // ---- Init -----------------------------------------------------------

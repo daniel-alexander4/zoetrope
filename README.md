@@ -41,8 +41,10 @@ manager. The browser tab is harmless on its own.
   - Gear icon — toggle the editor panel
 - **Editor panel (right)** — global controls at top (background color,
   ball size, speed on a 0–10 scale — higher is faster, 10 ≈ one
-  cycle per second); add / reorder / delete playlist
-  items below; per-item color / repeats / direction / angle. Click
+  cycle per second); below them, a **Library** picker that selects the
+  active playlist + buttons to create / rename / duplicate / delete
+  playlists; then add / reorder / delete pattern items in the active
+  playlist; per-item color / repeats / direction / angle. Click
   **Save** to write to the config file; **Revert** discards unsaved
   edits.
 - **Keyboard shortcuts** — Space (play/pause), ← (start of pattern),
@@ -97,9 +99,32 @@ useful while learning the positions, off for live sessions. The optional
 per-item `name` field overrides the pattern's default label in the editor
 and the now-playing strip.
 
-Two presets ship in the default config: "IEMT · Identity" (16 steps with
-returns to center between each cardinal/diagonal) and "IEMT · Emotion"
-(continuous 8-position round).
+Two IEMT-category playlists ship in the default config: "IEMT · Identity
+(draft)" (16 steps with returns to center between each cardinal/diagonal)
+and "IEMT · Emotion (draft)" (continuous 8-position round). Both are
+starting drafts — the exact step orderings are placeholders rather than
+canonical clinical sequences.
+
+## Playlists
+
+The editor library holds any number of named playlists, each filed under
+a free-form **Category** (e.g. `Continuous`, `IEMT`, `EMDR`). The Library
+picker switches which one plays — the engine resets to the first item of
+the chosen playlist. The default config ships:
+
+- `Default` (Continuous) — the eight continuous sweep / circle / infinity /
+  bounce patterns, active on first launch.
+- `IEMT · Identity (draft)` (IEMT)
+- `IEMT · Emotion (draft)` (IEMT)
+
+New playlists default to the currently-active playlist's category;
+**+ New category…** in the Category dropdown lets you start a fresh
+grouping (e.g. add an EMDR set). Renames are name-collision-safe — a
+duplicate name gets ` (2)`, ` (3)` appended automatically.
+
+In manager mode, switching the active playlist (or editing any other
+config field) pushes the fresh config to every connected client mid-
+session; the client returns to its own library when the session ends.
 
 ## Safety and framing
 

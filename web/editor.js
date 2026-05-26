@@ -60,13 +60,28 @@
       onFieldReset: () => {},
       onFieldLoopToggle: () => {},
       onSaveCloseEditor: () => {},
+      onConfirm: (msg, fn) => { if (window.confirm(msg)) fn(); },
       ...(options || {}),
     };
     populateAddPattern();
     wireGlobalControls();
     wireTabHandlers();
     wireFieldHandlers();
+    wirePlaylistLibrary();
     wireSaveRevert();
+  }
+
+  // currentPlaylist resolves state.config.activePlaylist against the
+  // library; falls back to playlists[0] when the active name is missing
+  // (renamed, deleted, or never set) so the engine always has something
+  // to render. Returns undefined only when the library itself is empty.
+  function currentPlaylist() {
+    const cfg = state?.config;
+    const playlists = cfg?.playlists || [];
+    return playlists.find(p => p.name === cfg?.activePlaylist) || playlists[0];
+  }
+  function currentItems() {
+    return currentPlaylist()?.items || [];
   }
 
   // ---- DOM rendering --------------------------------------------------
@@ -76,7 +91,7 @@
     if (!list) return;
     list.innerHTML = '';
     const tmpl = document.getElementById('item-template');
-    state.config.playlist.forEach((item, i) => {
+    currentItems().forEach((item, i) => {
       const node = tmpl.content.firstElementChild.cloneNode(true);
       node.dataset.pattern = item.pattern;
       node.dataset.index = String(i);
@@ -261,7 +276,9 @@
   }
 
   function reorderItem(fromIdx, insertAt) {
-    const arr = state.config.playlist;
+    const pl = currentPlaylist();
+    if (!pl) return;
+    const arr = pl.items;
     if (fromIdx < 0 || fromIdx >= arr.length) return;
     if (insertAt === fromIdx || insertAt === fromIdx + 1) return;
     const playing = arr[state.itemIdx ?? 0];
@@ -274,15 +291,16 @@
   }
 
   function deleteItem(i) {
-    if (state.config.playlist.length <= 1) return;
-    state.config.playlist.splice(i, 1);
+    const pl = currentPlaylist();
+    if (!pl) return;
+    pl.items.splice(i, 1);
     if (state.itemIdx != null) {
-      if (state.itemIdx >= state.config.playlist.length) {
+      if (state.itemIdx >= pl.items.length) {
         opts.onEnterItem(0);
       } else if (state.itemIdx > i) {
         state.itemIdx -= 1;
       } else if (state.itemIdx === i) {
-        opts.onEnterItem(state.itemIdx % state.config.playlist.length);
+        opts.onEnterItem(pl.items.length === 0 ? 0 : state.itemIdx % pl.items.length);
       }
     }
     markDirty();
@@ -291,8 +309,10 @@
 
   function addItem(pattern) {
     if (!PATTERN_LABELS[pattern]) return;
+    const pl = currentPlaylist();
+    if (!pl) return;
     const defaults = PATTERN_DEFAULTS[pattern] || {};
-    state.config.playlist.push({ pattern, repeats: 3, ...defaults });
+    pl.items.push({ pattern, repeats: 3, ...defaults });
     markDirty();
     renderPlaylist();
   }
@@ -308,6 +328,200 @@
       opt.textContent = label;
       sel.appendChild(opt);
     });
+  }
+
+  // ---- Playlist library (picker + CRUD) -------------------------------
+
+  let libraryEditMode = null; // 'new' | 'rename' | null
+
+  function renderPlaylistLibrary() {
+    const sel = document.getElementById('playlist-picker');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const playlists = state.config.playlists || [];
+    // Group by category, preserving first-appearance order so the picker
+    // shows whatever order Dan has the library in rather than alphabetical.
+    const order = [];
+    const groups = new Map();
+    for (const pl of playlists) {
+      const cat = pl.category || 'Other';
+      if (!groups.has(cat)) { groups.set(cat, []); order.push(cat); }
+      groups.get(cat).push(pl);
+    }
+    for (const cat of order) {
+      const grp = document.createElement('optgroup');
+      grp.label = cat;
+      for (const pl of groups.get(cat)) {
+        const opt = document.createElement('option');
+        opt.value = pl.name;
+        opt.textContent = pl.name;
+        if (pl.name === state.config.activePlaylist) opt.selected = true;
+        grp.appendChild(opt);
+      }
+      sel.appendChild(grp);
+    }
+    const del = document.getElementById('lib-del');
+    if (del) del.disabled = playlists.length <= 1;
+  }
+
+  function distinctCategories() {
+    const set = new Set();
+    for (const pl of state.config.playlists || []) {
+      if (pl.category) set.add(pl.category);
+    }
+    return [...set];
+  }
+
+  function populateCategorySelect(sel, selectedCategory) {
+    sel.innerHTML = '';
+    for (const cat of distinctCategories()) {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      if (cat === selectedCategory) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    const opt = document.createElement('option');
+    opt.value = '__new__';
+    opt.textContent = '+ New category…';
+    sel.appendChild(opt);
+  }
+
+  // uniquePlaylistName resolves rename/new collisions by suffixing
+  // " (2)", " (3)" until free. `exclude` is the playlist being renamed
+  // (so it doesn't collide with itself); pass null for new-playlist.
+  function uniquePlaylistName(name, exclude) {
+    const taken = new Set();
+    for (const pl of state.config.playlists || []) {
+      if (pl !== exclude) taken.add(pl.name);
+    }
+    if (!taken.has(name)) return name;
+    for (let n = 2; ; n++) {
+      const candidate = `${name} (${n})`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+
+  function openLibraryEdit(mode) {
+    libraryEditMode = mode;
+    const box = document.getElementById('library-edit');
+    if (!box) return;
+    const nameInput = document.getElementById('lib-name');
+    const catSel = document.getElementById('lib-category');
+    const cur = currentPlaylist();
+    if (mode === 'rename' && cur) {
+      nameInput.value = cur.name;
+      populateCategorySelect(catSel, cur.category);
+    } else {
+      nameInput.value = '';
+      populateCategorySelect(catSel, cur?.category || 'Custom');
+    }
+    box.classList.remove('hidden');
+    nameInput.focus();
+    nameInput.select();
+  }
+
+  function closeLibraryEdit() {
+    libraryEditMode = null;
+    const box = document.getElementById('library-edit');
+    if (box) box.classList.add('hidden');
+  }
+
+  function applyLibraryEdit() {
+    if (!libraryEditMode) return;
+    const name = (document.getElementById('lib-name').value || '').trim();
+    if (!name) return;
+    const catSel = document.getElementById('lib-category');
+    let category = catSel.value;
+    if (category === '__new__') {
+      const nc = (window.prompt('New category name:') || '').trim();
+      if (!nc) return;
+      category = nc;
+    }
+    if (libraryEditMode === 'new') {
+      const unique = uniquePlaylistName(name, null);
+      state.config.playlists.push({ name: unique, category, items: [] });
+      state.config.activePlaylist = unique;
+    } else if (libraryEditMode === 'rename') {
+      const cur = currentPlaylist();
+      if (!cur) return;
+      const unique = uniquePlaylistName(name, cur);
+      cur.name = unique;
+      cur.category = category;
+      state.config.activePlaylist = unique;
+    }
+    markDirty();
+    closeLibraryEdit();
+    renderPlaylistLibrary();
+    renderPlaylist();
+    opts.onEnterItem(0);
+  }
+
+  function duplicatePlaylist() {
+    const cur = currentPlaylist();
+    if (!cur) return;
+    const name = uniquePlaylistName(`${cur.name} (copy)`, null);
+    state.config.playlists.push({
+      name,
+      category: cur.category,
+      items: JSON.parse(JSON.stringify(cur.items || [])),
+    });
+    state.config.activePlaylist = name;
+    markDirty();
+    renderPlaylistLibrary();
+    renderPlaylist();
+    opts.onEnterItem(0);
+  }
+
+  function deletePlaylist() {
+    const playlists = state.config.playlists || [];
+    if (playlists.length <= 1) return;
+    const cur = currentPlaylist();
+    if (!cur) return;
+    opts.onConfirm(`Delete playlist "${cur.name}"?`, () => {
+      const idx = playlists.indexOf(cur);
+      playlists.splice(idx, 1);
+      state.config.activePlaylist = playlists[0].name;
+      markDirty();
+      renderPlaylistLibrary();
+      renderPlaylist();
+      opts.onEnterItem(0);
+    });
+  }
+
+  function wirePlaylistLibrary() {
+    bindChange('playlist-picker', e => {
+      state.config.activePlaylist = e.target.value;
+      markDirty();
+      renderPlaylist();
+      opts.onEnterItem(0);
+    });
+    bindClick('lib-new', () => openLibraryEdit('new'));
+    bindClick('lib-rename', () => openLibraryEdit('rename'));
+    bindClick('lib-dup', duplicatePlaylist);
+    bindClick('lib-del', deletePlaylist);
+    bindClick('lib-ok', applyLibraryEdit);
+    bindClick('lib-cancel', closeLibraryEdit);
+    const nameInput = document.getElementById('lib-name');
+    if (nameInput) {
+      nameInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); applyLibraryEdit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); closeLibraryEdit(); }
+      });
+    }
+    const catSel = document.getElementById('lib-category');
+    if (catSel) {
+      catSel.addEventListener('change', e => {
+        if (e.target.value !== '__new__') return;
+        const nc = (window.prompt('New category name:') || '').trim();
+        if (!nc) { populateCategorySelect(catSel, currentPlaylist()?.category); return; }
+        const opt = document.createElement('option');
+        opt.value = nc;
+        opt.textContent = nc;
+        catSel.insertBefore(opt, catSel.querySelector('option[value="__new__"]'));
+        opt.selected = true;
+      });
+    }
   }
 
   // ---- Dirty / save state --------------------------------------------
@@ -361,6 +575,8 @@
     }
     updateRegenVisibility();
     applyMode(state.config.mode || 'balls');
+    closeLibraryEdit();
+    renderPlaylistLibrary();
     renderPlaylist();
   }
 

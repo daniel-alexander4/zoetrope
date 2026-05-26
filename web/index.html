@@ -103,6 +103,22 @@
         <input type="checkbox" id="show-position-labels"> Show position labels
       </label>
     </div>
+    <div class="global library-row balls-only">
+      <span class="group-label">Library</span>
+      <select id="playlist-picker" title="Active playlist (the one that plays)"></select>
+      <button id="lib-new" type="button" class="regen" title="New playlist">+</button>
+      <button id="lib-rename" type="button" class="regen" title="Rename / recategorize">✎</button>
+      <button id="lib-dup" type="button" class="regen" title="Duplicate">⎘</button>
+      <button id="lib-del" type="button" class="regen" title="Delete playlist">🗑</button>
+    </div>
+    <div id="library-edit" class="global library-edit balls-only hidden">
+      <input type="text" id="lib-name" placeholder="Playlist name">
+      <label>Category
+        <select id="lib-category"></select>
+      </label>
+      <button id="lib-ok" type="button" class="regen">OK</button>
+      <button id="lib-cancel" type="button" class="regen">Cancel</button>
+    </div>
     <ol id="playlist" class="balls-only"></ol>
     <footer>
       <button id="btn-save">Save</button>

@@ -90,6 +90,10 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// In manager mode, fan the fresh config to every connected
+		// session so client-side edits (active playlist switch, global
+		// tweaks) propagate without requiring a rejoin. No-op otherwise.
+		modes.BroadcastConfig()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 

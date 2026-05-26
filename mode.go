@@ -545,6 +545,44 @@ func (m *modeState) pushConfig(ctx context.Context, sess *session, conn *websock
 	return writeFrame(writeCtx, conn, msg)
 }
 
+// BroadcastConfig pushes the current store config to every connected
+// session. Called from the PUT /config handler after a successful
+// configStore.Set() so practitioner edits (active playlist switch,
+// global tweaks) propagate to active clients without a rejoin. No-op
+// outside manager mode. Per-session errors are logged but don't abort
+// the loop.
+func (m *modeState) BroadcastConfig() {
+	m.mu.Lock()
+	if m.current != modeManager {
+		m.mu.Unlock()
+		return
+	}
+	type pair struct {
+		sess *session
+		conn *websocket.Conn
+	}
+	var live []pair
+	for _, sess := range m.sessions {
+		sess.mu.Lock()
+		conn := sess.wsConn
+		sess.mu.Unlock()
+		if conn != nil {
+			live = append(live, pair{sess, conn})
+		}
+	}
+	m.mu.Unlock()
+	if len(live) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, p := range live {
+		if err := m.pushConfig(ctx, p.sess, p.conn); err != nil {
+			log.Printf("broadcast config to session %s: %v", p.sess.certFP[:8], err)
+		}
+	}
+}
+
 // SendVerb forwards a manager-UI verb to the session's WS as a frame.
 func (m *modeState) SendVerb(fp string, verb json.RawMessage) error {
 	sess := m.lookupSession(fp)
