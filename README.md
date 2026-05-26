@@ -216,12 +216,17 @@ If the listener starts but no client ever reaches it, check both.
 ### Protocol
 
 JSON frames over a WebSocket inside the TLS connection. Manager → client:
-`play`, `pause`, `resume`, `advance`, `back`, `hold`, `release`, `stop`,
-`set-sequence`. Client → manager: `hello`, `sequences`, `state`.
-Bidirectional: `file-offer`, `file-chunk`, `file-cancel` (see File sharing
-below); `audio-offer`, `audio-answer`, `audio-ice`, `audio-bye` (see Voice
-call). Every frame carries `pv: 1` so future revisions can negotiate
-cleanly.
+`play`, `pause`, `resume`, `advance`, `back`, `hold`, `release`,
+`advance-position`, `back-position`, `stop`, `set-sequence`,
+`set-config`. Client → manager: `hello`, `sequences`, `state`.
+Bidirectional: `file-offer`, `file-accept`, `file-chunk`, `file-cancel`
+(see File sharing below); `audio-offer`, `audio-answer`, `audio-ice`,
+`audio-bye` (see Voice call). Every frame carries `pv: 1` so future
+revisions can negotiate cleanly.
+
+`advance-position` / `back-position` step a position-sequence pattern by
+one position (with wrap); `hold` pauses with a snap to the current
+position. They no-op on continuous patterns.
 
 ### Client records
 
@@ -283,17 +288,36 @@ still cause feedback that AEC won't fully suppress.
 
 ### File sharing
 
-Either side can send a file across an active session. The 📎 button on
-each session card (manager) and in the client-mode overlay (client)
-opens a native file picker. The selected file is chunked over the same
-mTLS WebSocket — no separate transport, no third-party service.
+Either side can send a file across an active session. Three ways to
+start a send:
 
-The receiver sees an inline notification with the filename and size and
-chooses **Save** (browser download), **Open** (new tab), or **Dismiss**.
-Files never touch the receiver's disk until they explicitly save.
-Received bytes live tab-ephemerally: closing the page or disconnecting
-discards them. Unfetched arrivals are dropped from receiver memory
-after five minutes.
+- **📎** on each session card (manager) or in the client-mode overlay
+  (client) opens a native file picker.
+- **Drag-and-drop** a file onto a session card, the MI **Files** card,
+  or the client-side overlay — the host highlights while you drag and
+  the send starts on drop.
+- **Files card** on `/manage` in MI view: pick a client, choose a file,
+  click **Send**. The button is disabled until a file is chosen and the
+  selected client has a live session.
+
+The sender sees a progress card with a chunks-done / chunks-total bar
+that ticks through the transfer; the receiver's `file-accept` flips it
+to "Accepted, sending…" before chunks start landing, and the card
+auto-dismisses 3 s after "Sent." On the receiver, an inline
+notification shows filename + size and offers **Save** (browser
+download), **Open** (new tab), or **Dismiss**.
+
+Storage depends on whether the session is bound to a client:
+
+- **Bound session** — the file is persisted under the client's record
+  at `<user-config>/zoetrope/clients/<slug>/inbox/<eid>/{meta.json, blob}`
+  and stays there across session removal and binary restarts. The MI
+  Files card lists every received file for that client with Open +
+  Dismiss; Save / Open from the inline notification fetch the same
+  bytes.
+- **Unbound session** — the bytes live in memory only and are dropped
+  five minutes after arrival if the user hasn't fetched them. Save or
+  Open consumes the in-memory entry.
 
 Size is capped per machine via **Max transfer size (MiB)** in the
 editor (default 16 MiB). The cap is sticky on the receiver — a
