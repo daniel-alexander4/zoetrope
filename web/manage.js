@@ -760,6 +760,120 @@
     }
   });
 
+  // ---- MI card drag-to-reorder --------------------------------------
+  //
+  // Each MI card's <header> is the drag handle (cursor: grab in CSS).
+  // Pattern mirrors the playlist-item drag-and-drop in editor.js: HTML5
+  // DnD, mousedown sets draggable=true, dragover marks drop-above /
+  // drop-below by cursor-relative position, drop reorders by
+  // insertBefore. Order persists in localStorage so the practitioner's
+  // layout sticks across reloads. The dragover/drop handlers gate on
+  // an MI card being mid-drag so they don't fire on nested playlist-item
+  // drags inside the editor card.
+  const MI_CARD_ORDER_KEY = 'zoetrope.mi.cardOrder';
+
+  function setupMICardDrag() {
+    const grid = document.querySelector('.card-grid.mi-only');
+    if (!grid) return;
+    restoreMICardOrder(grid);
+    for (const card of grid.querySelectorAll(':scope > .card')) {
+      wireMICardDrag(card);
+    }
+  }
+
+  function wireMICardDrag(card) {
+    const handle = card.querySelector(':scope > header');
+    if (!handle) return;
+    handle.addEventListener('mousedown', e => {
+      // Don't start a drag if the user clicked an interactive control
+      // (button, select, input, etc.) inside the header — they want to
+      // operate the control, not relocate the card.
+      if (e.target.closest('button, input, select, textarea, a')) return;
+      card.draggable = true;
+      document.addEventListener('mouseup', () => { card.draggable = false; }, { once: true });
+    });
+    card.addEventListener('dragstart', e => {
+      if (e.target !== card) return; // only the card itself, not nested items
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.id);
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      card.draggable = false;
+      clearMICardDropIndicators();
+    });
+    card.addEventListener('dragover', e => {
+      // Only react when an MI card is being dragged. Without this guard the
+      // playlist-item drags inside the editor card bubble up and light up
+      // the card's drop indicators.
+      if (!document.querySelector('.card-grid.mi-only > .card.dragging')) return;
+      if (card.classList.contains('dragging')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = card.getBoundingClientRect();
+      const above = (e.clientY - rect.top) < rect.height / 2;
+      clearMICardDropIndicators();
+      card.classList.add(above ? 'drop-above' : 'drop-below');
+    });
+    card.addEventListener('dragleave', e => {
+      if (!card.contains(e.relatedTarget)) {
+        card.classList.remove('drop-above', 'drop-below');
+      }
+    });
+    card.addEventListener('drop', e => {
+      if (!document.querySelector('.card-grid.mi-only > .card.dragging')) return;
+      e.preventDefault();
+      const fromID = e.dataTransfer.getData('text/plain');
+      if (!fromID || fromID === card.id) { clearMICardDropIndicators(); return; }
+      const from = document.getElementById(fromID);
+      if (!from || from.parentElement !== card.parentElement) {
+        clearMICardDropIndicators();
+        return;
+      }
+      const rect = card.getBoundingClientRect();
+      const above = (e.clientY - rect.top) < rect.height / 2;
+      const grid = card.parentElement;
+      if (above) grid.insertBefore(from, card);
+      else grid.insertBefore(from, card.nextSibling);
+      clearMICardDropIndicators();
+      saveMICardOrder(grid);
+    });
+  }
+
+  function clearMICardDropIndicators() {
+    document.querySelectorAll('.card-grid.mi-only > .card.drop-above, .card-grid.mi-only > .card.drop-below')
+      .forEach(el => el.classList.remove('drop-above', 'drop-below'));
+  }
+
+  function saveMICardOrder(grid) {
+    const ids = [...grid.querySelectorAll(':scope > .card')].map(c => c.id).filter(Boolean);
+    try {
+      localStorage.setItem(MI_CARD_ORDER_KEY, JSON.stringify(ids));
+    } catch (err) {
+      console.warn('save MI card order:', err);
+    }
+  }
+
+  function restoreMICardOrder(grid) {
+    let saved;
+    try {
+      saved = JSON.parse(localStorage.getItem(MI_CARD_ORDER_KEY) || '[]');
+    } catch (err) {
+      return;
+    }
+    if (!Array.isArray(saved)) return;
+    // Re-append in saved order. Cards present in DOM but not in saved
+    // (e.g., added in a later build) get left at the end in their HTML
+    // source order. IDs in saved that no longer match a card are ignored.
+    for (const id of saved) {
+      const card = document.getElementById(id);
+      if (card && card.parentElement === grid) {
+        grid.appendChild(card);
+      }
+    }
+  }
+
   // ---- Init -----------------------------------------------------------
 
   async function init() {
@@ -775,6 +889,7 @@
     window.zoetropeEditor.loadConfig().catch(err => {
       console.warn('editor loadConfig failed:', err);
     });
+    setupMICardDrag();
     startEventSource();
     heartbeat();
   }

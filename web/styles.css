@@ -719,6 +719,29 @@ body.mode-field .balls-only { display: none !important; }
   cursor: not-allowed;
 }
 
+/* ---- MI card drag-to-reorder ------------------------------------ */
+/* Each MI card's header is the drag handle. Order persists in
+   localStorage (see manage.js setupMICardDrag) so the practitioner's
+   layout sticks across reloads. The drag interaction matches the
+   playlist-item pattern in editor.js. */
+
+.card-grid.mi-only > .card > header {
+  cursor: grab;
+  user-select: none;
+}
+.card-grid.mi-only > .card.dragging > header {
+  cursor: grabbing;
+}
+.card-grid.mi-only > .card.dragging {
+  opacity: 0.4;
+}
+.card-grid.mi-only > .card.drop-above {
+  box-shadow: 0 -3px 0 0 var(--accent);
+}
+.card-grid.mi-only > .card.drop-below {
+  box-shadow: 0 3px 0 0 var(--accent);
+}
+
 /* ---- Clients card + view-client --------------------------------- */
 
 #clients-card[hidden] { display: none; }
