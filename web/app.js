@@ -514,7 +514,8 @@
         case 'hold': case 'release':
         case 'advance-position': case 'back-position':
         case 'jump': case 'set-sequence':
-          return; // queued in managerPlayIntent only
+        case 'set-speed':
+          return; // queued in managerPlayIntent / dropped
       }
     }
     switch (verb.type) {
@@ -534,6 +535,14 @@
       case 'set-sequence':
         if (Number.isInteger(verb.index)) jumpToItem(verb.index);
         break;
+      case 'set-speed': {
+        // Practitioner-dialed runtime tempo. Honors the same 0-4× shape
+        // as the standalone speed-select; advance() multiplies into
+        // userSpeed/2 so the cycle scales smoothly.
+        const m = Number(verb.mul);
+        if (Number.isFinite(m) && m > 0) state.speedMul = m;
+        break;
+      }
       case 'set-config':
         if (verb.config) applyPushedConfig(verb.config);
         break;

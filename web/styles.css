@@ -2064,10 +2064,40 @@ body.view-admin.show-info #identity-panel { display: block; }
   cursor: pointer;
 }
 .session-controls button:hover { background: var(--overlay); }
-.session-controls button:disabled {
+.session-controls button:disabled,
+.session-controls .session-picker:disabled,
+.session-controls .ctl-speed:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
+.session-controls .ctl-speed-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--subtext);
+  padding: 0 4px;
+}
+.session-controls .ctl-speed {
+  width: 80px;
+  vertical-align: middle;
+}
+.session-controls .ctl-speed-value {
+  min-width: 28px;
+  text-align: right;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.session-error {
+  margin: 4px 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  background: color-mix(in oklab, var(--danger) 18%, var(--surface));
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  color: var(--text);
+}
+.session-error[hidden] { display: none; }
 .session-detail {
   font-size: 11px;
   color: var(--subtext);

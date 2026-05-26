@@ -358,9 +358,15 @@
         <button class="ctl-advance" data-verb="advance" title="Next sequence">▶▶</button>
         <button class="ctl-stop" data-verb="stop" title="Pause and reset to first sequence">Reset</button>
         <select class="session-picker" title="Jump to a specific sequence"></select>
+        <label class="ctl-speed-wrap" title="Live tempo multiplier (0.25× – 4×). Sends set-speed on release.">
+          <span class="ctl-speed-icon">🐢</span>
+          <input class="ctl-speed" type="range" min="0.25" max="4" step="0.25" value="1">
+          <span class="ctl-speed-value">1×</span>
+        </label>
         <button class="session-call" title="Start a voice call with this client">📞</button>
         <button class="session-attach" title="Send a file to this client">📎</button>
       </div>
+      <div class="session-error" hidden></div>
       <div class="session-inbox"></div>
       <div class="session-detail"></div>
     </li>

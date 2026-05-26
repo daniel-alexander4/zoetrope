@@ -44,10 +44,36 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(verb),
       });
-      if (!r.ok) console.warn('verb', r.status, await r.text());
+      if (!r.ok) {
+        const text = (await r.text()).trim() || ('HTTP ' + r.status);
+        console.warn('verb', verb.type, r.status, text);
+        flashSessionError(fp, verb.type + ' failed: ' + text);
+      }
     } catch (err) {
       console.error('sendSessionVerb:', err);
+      flashSessionError(fp, (verb && verb.type ? verb.type + ' failed: ' : 'verb failed: ') + (err.message || err));
     }
+  }
+
+  // flashSessionError shows a per-card inline error that auto-clears.
+  // Replaces the silent console.warn so a misfire (verb during a
+  // disconnect, server-side reject) is actually visible to the
+  // practitioner.
+  const SESSION_ERROR_TIMERS = new WeakMap();
+  function flashSessionError(fp, message) {
+    const entry = state.sessions.get(fp);
+    if (!entry) return;
+    const el = entry.node.querySelector('.session-error');
+    if (!el) return;
+    el.textContent = message;
+    el.hidden = false;
+    const prev = SESSION_ERROR_TIMERS.get(el);
+    if (prev) clearTimeout(prev);
+    SESSION_ERROR_TIMERS.set(el, setTimeout(() => {
+      el.hidden = true;
+      el.textContent = '';
+      SESSION_ERROR_TIMERS.delete(el);
+    }, 4000));
   }
 
   // ---- Page state -----------------------------------------------------
@@ -205,6 +231,25 @@
     for (const sess of sessions) addSessionToList(sess);
   }
 
+  // resolveSessionLabel — single source of truth for "what to call this
+  // session" on the card. Bound-to-a-client sessions get the client's name
+  // (looked up against the cached state.clients list). Unbound sessions
+  // fall back to a client-supplied hello label, or the fingerprint prefix.
+  // Called from addSessionToList, setSessionLabel, and applyResolvedLabels
+  // (which re-runs after refreshClientsList fetches fresh names).
+  function resolveSessionLabel(snap) {
+    if (snap.client_id) {
+      const c = state.clients.find(c => c.id === snap.client_id);
+      if (c && c.name) return c.name;
+    }
+    return snap.label || (snap.fingerprint || '').slice(0, 12);
+  }
+  function applyResolvedLabels() {
+    for (const [, entry] of state.sessions) {
+      entry.node.querySelector('.session-label').textContent = resolveSessionLabel(entry.snap);
+    }
+  }
+
   function addSessionToList(snap, url) {
     const existing = state.sessions.get(snap.fingerprint);
     if (existing) {
@@ -215,7 +260,7 @@
     const tmpl = document.getElementById('session-template');
     const node = tmpl.content.firstElementChild.cloneNode(true);
     node.dataset.fp = snap.fingerprint;
-    node.querySelector('.session-label').textContent = snap.label || snap.fingerprint.slice(0, 12);
+    node.querySelector('.session-label').textContent = resolveSessionLabel(snap);
     const statusEl = node.querySelector('.session-status');
     statusEl.textContent = snap.connected ? 'connected' : 'waiting';
     statusEl.dataset.status = snap.connected ? 'connected' : 'waiting';
@@ -223,6 +268,9 @@
     wireSessionNode(node, snap.fingerprint);
     list.appendChild(node);
     state.sessions.set(snap.fingerprint, { node, snap });
+    // Apply the disable-on-disconnect state for the freshly-rendered
+    // controls so a waiting card shows its transport row grayed out.
+    setSessionConnected(node, !!snap.connected);
   }
 
   function removeSessionFromList(fp) {
@@ -242,25 +290,51 @@
     // the Files card) reflects connection changes without a full
     // /api/mode/state refetch.
     entry.snap.connected = (status === 'connected');
+    setSessionConnected(entry.node, status === 'connected');
     updateFilesSendState();
+  }
+
+  // setSessionConnected toggles the disabled state of every transport-style
+  // control on a session card. When the client is disconnected, clicks
+  // round-trip to the server and 400 because the WS isn't paired — the
+  // practitioner can't tell anything happened. Disabling at the UI layer
+  // is the honest signal that the controls aren't operative right now.
+  function setSessionConnected(node, connected) {
+    const controls = node.querySelectorAll(
+      '.session-controls button[data-verb], .session-picker, .ctl-speed, .session-call, .session-attach'
+    );
+    for (const el of controls) {
+      el.disabled = !connected;
+    }
   }
 
   function setSessionLabel(fp, label) {
     const entry = state.sessions.get(fp);
     if (!entry || !label) return;
-    entry.node.querySelector('.session-label').textContent = label;
+    // Stash the client-supplied hello label on the snapshot so a later
+    // refreshClientsList that doesn't resolve a name still has this as
+    // a better-than-fp-prefix fallback.
+    entry.snap.label = label;
+    entry.node.querySelector('.session-label').textContent = resolveSessionLabel(entry.snap);
   }
 
   function populateSessionPicker(fp, payload) {
     const entry = state.sessions.get(fp);
     if (!entry || !payload?.sequences) return;
     const sel = entry.node.querySelector('.session-picker');
+    // Preserve the current selection across rebuilds so the "currently
+    // playing" mark stays put when the sequences list re-arrives (e.g.,
+    // on rejoin) with the same shape.
+    const previous = sel.value;
     sel.innerHTML = '<option value="">Jump to…</option>';
     for (const seq of payload.sequences) {
       const opt = document.createElement('option');
       opt.value = String(seq.index);
       opt.textContent = `${seq.index + 1}. ${seq.label}`;
       sel.appendChild(opt);
+    }
+    if (previous !== '' && Array.prototype.some.call(sel.options, o => o.value === previous)) {
+      sel.value = previous;
     }
   }
 
@@ -284,6 +358,15 @@
     }
     entry.node.querySelector('.session-detail').textContent = detail;
     setStepControlsMode(entry.node, pat === 'position-sequence');
+    // Sync the Jump-to picker to the currently-playing item — single
+    // source of truth for "what's playing" is the state event, so the
+    // picker just reflects it.
+    const picker = entry.node.querySelector('.session-picker');
+    const wantValue = String(idx);
+    if (picker && picker.value !== wantValue
+        && Array.prototype.some.call(picker.options, o => o.value === wantValue)) {
+      picker.value = wantValue;
+    }
   }
 
   // setStepControlsMode swaps the back/advance buttons between playlist-
@@ -331,8 +414,28 @@
       if (e.target.value === '') return;
       const idx = parseInt(e.target.value, 10);
       if (Number.isInteger(idx)) sendSessionVerb(fp, { type: 'set-sequence', index: idx });
-      e.target.value = '';
+      // No reset-to-placeholder — the next state event will sync the
+      // selection to whatever the client lands on. updateSessionDetail
+      // is the SoT for "what's playing" in the picker.
     });
+    // Speed slider: live tempo multiplier. Fires on 'change' (release),
+    // not 'input' (drag), so we don't spam the WS with intermediate
+    // values. Visual readout updates on 'input' for instant feedback.
+    const speed = node.querySelector('.ctl-speed');
+    const speedValue = node.querySelector('.ctl-speed-value');
+    function renderSpeedValue() {
+      const v = Number(speed.value);
+      speedValue.textContent = (Number.isInteger(v) ? v : v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')) + '×';
+    }
+    speed.addEventListener('input', renderSpeedValue);
+    speed.addEventListener('change', () => {
+      renderSpeedValue();
+      const mul = Number(speed.value);
+      if (Number.isFinite(mul) && mul > 0) {
+        sendSessionVerb(fp, { type: 'set-speed', mul });
+      }
+    });
+    renderSpeedValue();
     const inboxHost = node.querySelector('.session-inbox');
     const uploadURL = '/api/sessions/' + fp + '/transfer';
     async function sendFileForSession(file) {
@@ -926,6 +1029,10 @@
       renderFilesPicker();
       updateFilesSendState();
       renderNextPrepPicker();
+      // Re-resolve session labels — newly-fetched client names may
+      // promote fp-prefixes to "Alice" on cards rendered before the
+      // fetch returned.
+      applyResolvedLabels();
     } catch (err) {
       console.warn('clients list:', err);
     }
