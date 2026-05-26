@@ -60,6 +60,7 @@ manager. The browser tab is harmless on its own.
 | infinity-h  | trace of ∞ (lobes side by side) | yes                   | —          |
 | infinity-v  | trace of vertical 8 (lobes stacked) | yes               | —          |
 | bounce      | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
+| position-sequence | ordered walk through named gaze targets (8-point grid + center) | — | —          |
 
 `speed` (0–10 scale, global; higher = faster, 10 means one cycle per
 second) and `ballSize` (pixels, global) apply to every item. `repeats`
@@ -74,6 +75,41 @@ stops at each extreme of a sweep, grows to 2× then shrinks back over
 the viewer can keep their eyes moving "off-screen" and pick the ball
 back up smoothly when it returns. Cycle time extends by 2 × `lingerSec`
 so the on-screen motion pace stays consistent regardless of dwell.
+
+### Position-sequence patterns (IEMT / saccade / brainspotting / etc.)
+
+`position-sequence` is a separate engine from the continuous patterns
+above. Each item has an ordered list of `steps`, each referencing one of
+nine named gaze targets on a 3×3 grid:
+
+```
+up-l       up        up-r
+lateral-l  center    lateral-r
+down-l     down      down-r
+```
+
+Per-item `dwellSec` (default 1.5s) is the time the ball holds at each
+position. `transitSec` (default 0.8s) is the smooth-pursuit time between
+positions (cosine ease-in-out). The global `speed` knob scales the whole
+sequence: `speed = 2` honors the configured dwell/transit; higher = faster.
+Toggle **Show position labels** in the editor to overlay grid labels —
+useful while learning the positions, off for live sessions. The optional
+per-item `name` field overrides the pattern's default label in the editor
+and the now-playing strip.
+
+Two presets ship in the default config: "IEMT · Identity" (16 steps with
+returns to center between each cardinal/diagonal) and "IEMT · Emotion"
+(continuous 8-position round).
+
+## Safety and framing
+
+Zoetrope is a configurable gaze-target animation tool — a piece of
+software that moves a ball on a screen. It is **not** a treatment or a
+substitute for clinical care. The included IEMT presets and any other
+named modality (saccade training, anti-saccade, brainspotting fixation,
+EMDR, etc.) are starting templates for use **with a qualified
+practitioner** of that modality. Nothing in this README or the in-app
+copy is a therapeutic claim.
 
 ## Networking — manager / client / standalone
 

@@ -11,14 +11,15 @@ import (
 )
 
 type Config struct {
-	Mode           string         `json:"mode"` // "balls" or "field"
-	Background     string         `json:"background"`
-	BallSize       float64        `json:"ballSize"`
-	Speed          float64        `json:"speed"`          // 0-10 scale; 10 = 1 cycle/sec, 0 = paused
-	LingerSec      float64        `json:"lingerSec"`      // dwell at each extreme of a linear sweep; 0 = off
-	LingerLeadFrac float64        `json:"lingerLeadFrac"` // how far the size pulse leads into adjacent motion, as a fraction of min(L, half); 0 = pulse confined to dwell
-	Field          FieldConfig    `json:"field"`
-	Playlist       []PlaylistItem `json:"playlist"`
+	Mode               string         `json:"mode"` // "balls" or "field"
+	Background         string         `json:"background"`
+	BallSize           float64        `json:"ballSize"`
+	Speed              float64        `json:"speed"`              // 0-10 scale; 10 = 1 cycle/sec for continuous patterns; for position-sequence patterns, 2 = nominal (configured) timings, higher = faster
+	LingerSec          float64        `json:"lingerSec"`          // dwell at each extreme of a linear sweep; 0 = off
+	LingerLeadFrac     float64        `json:"lingerLeadFrac"`     // how far the size pulse leads into adjacent motion, as a fraction of min(L, half); 0 = pulse confined to dwell
+	ShowPositionLabels bool           `json:"showPositionLabels"` // when on, position-sequence patterns draw small labels at each gaze grid point
+	Field              FieldConfig    `json:"field"`
+	Playlist           []PlaylistItem `json:"playlist"`
 }
 
 type FieldConfig struct {
@@ -33,10 +34,19 @@ type FieldConfig struct {
 
 type PlaylistItem struct {
 	Pattern   string  `json:"pattern"`
+	Name      string  `json:"name,omitempty"` // optional human-readable label (overrides the pattern default in the editor / now-playing)
 	Color     string  `json:"color"`
 	Repeats   int     `json:"repeats"`
 	Direction string  `json:"direction,omitempty"`
 	AngleDeg  float64 `json:"angleDeg,omitempty"`
+	// Position-sequence patterns only:
+	Steps      []SequenceStep `json:"steps,omitempty"`
+	DwellSec   float64        `json:"dwellSec,omitempty"`   // default per-step dwell time (seconds); 0 → 1.5s fallback in the engine
+	TransitSec float64        `json:"transitSec,omitempty"` // default smooth-pursuit transit time between steps (seconds); 0 → 0.8s fallback
+}
+
+type SequenceStep struct {
+	Position string `json:"position"` // named gaze target: center / up / down / lateral-l / lateral-r / up-l / up-r / down-l / down-r
 }
 
 func defaultConfig() Config {
@@ -61,6 +71,30 @@ func defaultConfig() Config {
 			{Pattern: "infinity-h", Color: "#89b4fa", Repeats: 3, Direction: "cw"},
 			{Pattern: "infinity-v", Color: "#cba6f7", Repeats: 3, Direction: "cw"},
 			{Pattern: "bounce", Color: "#f38ba8", Repeats: 1, AngleDeg: 37},
+			{
+				Pattern: "position-sequence", Name: "IEMT · Identity",
+				Color: "#b4befe", Repeats: 1, DwellSec: 1.5, TransitSec: 0.8,
+				Steps: []SequenceStep{
+					{Position: "up"}, {Position: "center"},
+					{Position: "down"}, {Position: "center"},
+					{Position: "lateral-l"}, {Position: "center"},
+					{Position: "lateral-r"}, {Position: "center"},
+					{Position: "up-l"}, {Position: "center"},
+					{Position: "up-r"}, {Position: "center"},
+					{Position: "down-l"}, {Position: "center"},
+					{Position: "down-r"}, {Position: "center"},
+				},
+			},
+			{
+				Pattern: "position-sequence", Name: "IEMT · Emotion",
+				Color: "#f5c2e7", Repeats: 1, DwellSec: 1.5, TransitSec: 0.8,
+				Steps: []SequenceStep{
+					{Position: "up"}, {Position: "up-r"},
+					{Position: "lateral-r"}, {Position: "down-r"},
+					{Position: "down"}, {Position: "down-l"},
+					{Position: "lateral-l"}, {Position: "up-l"},
+				},
+			},
 		},
 	}
 }

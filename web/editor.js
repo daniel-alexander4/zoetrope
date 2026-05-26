@@ -11,24 +11,41 @@
   'use strict';
 
   const PATTERN_LABELS = {
-    'h-sweep':    'Horizontal sweep',
-    'v-sweep':    'Vertical sweep',
-    'diag-ulbr':  'Diagonal ↘ (UL↔BR)',
-    'diag-urbl':  'Diagonal ↙ (UR↔BL)',
-    'bounce':     'Bounce',
-    'circle':     'Circle',
-    'infinity-h': 'Infinity ∞',
-    'infinity-v': 'Infinity 8 (vertical)',
+    'h-sweep':          'Horizontal sweep',
+    'v-sweep':          'Vertical sweep',
+    'diag-ulbr':        'Diagonal ↘ (UL↔BR)',
+    'diag-urbl':        'Diagonal ↙ (UR↔BL)',
+    'bounce':           'Bounce',
+    'circle':           'Circle',
+    'infinity-h':       'Infinity ∞',
+    'infinity-v':       'Infinity 8 (vertical)',
+    'position-sequence':'Position sequence',
   };
   const PATTERN_DEFAULTS = {
-    'h-sweep':    { color: '#f5e0dc' },
-    'v-sweep':    { color: '#f9e2af' },
-    'diag-ulbr':  { color: '#fab387' },
-    'diag-urbl':  { color: '#eba0ac' },
-    'bounce':     { color: '#f38ba8', angleDeg: 37 },
-    'circle':     { color: '#a6e3a1', direction: 'cw' },
-    'infinity-h': { color: '#89b4fa', direction: 'cw' },
-    'infinity-v': { color: '#cba6f7', direction: 'cw' },
+    'h-sweep':          { color: '#f5e0dc' },
+    'v-sweep':          { color: '#f9e2af' },
+    'diag-ulbr':        { color: '#fab387' },
+    'diag-urbl':        { color: '#eba0ac' },
+    'bounce':           { color: '#f38ba8', angleDeg: 37 },
+    'circle':           { color: '#a6e3a1', direction: 'cw' },
+    'infinity-h':       { color: '#89b4fa', direction: 'cw' },
+    'infinity-v':       { color: '#cba6f7', direction: 'cw' },
+    'position-sequence':{
+      color: '#b4befe', dwellSec: 1.5, transitSec: 0.8,
+      steps: [{ position: 'center' }, { position: 'lateral-l' }, { position: 'center' }, { position: 'lateral-r' }],
+    },
+  };
+  const POSITION_KEYS = ['center', 'up', 'up-l', 'up-r', 'lateral-l', 'lateral-r', 'down', 'down-l', 'down-r'];
+  const POSITION_LABELS = {
+    'center':    'Center',
+    'up':        'Up',
+    'up-l':      'Up-L',
+    'up-r':      'Up-R',
+    'lateral-l': 'Lateral-L',
+    'lateral-r': 'Lateral-R',
+    'down':      'Down',
+    'down-l':    'Down-L',
+    'down-r':    'Down-R',
   };
 
   let state = null;
@@ -63,7 +80,8 @@
       const node = tmpl.content.firstElementChild.cloneNode(true);
       node.dataset.pattern = item.pattern;
       node.dataset.index = String(i);
-      node.querySelector('.pattern-name').textContent = PATTERN_LABELS[item.pattern] || item.pattern;
+      const nameEl = node.querySelector('.pattern-name');
+      nameEl.textContent = item.name || PATTERN_LABELS[item.pattern] || item.pattern;
       node.querySelector('.color').value = item.color || '#ffffff';
       node.querySelector('.repeats').value = item.repeats ?? 1;
       node.querySelector('.direction').value = item.direction || 'cw';
@@ -85,6 +103,10 @@
         item.angleDeg = +e.target.value;
         markDirty();
       });
+
+      if (item.pattern === 'position-sequence') {
+        wireSequenceEditor(node, item, nameEl);
+      }
 
       const titleBar = node.querySelector('.title-bar');
       titleBar.addEventListener('mousedown', e => {
@@ -138,6 +160,104 @@
   function clearDropIndicators() {
     document.querySelectorAll('#playlist .item.drop-above, #playlist .item.drop-below')
       .forEach(el => el.classList.remove('drop-above', 'drop-below'));
+  }
+
+  function wireSequenceEditor(node, item, nameEl) {
+    const nameInput = node.querySelector('.iemt-name');
+    const dwellInput = node.querySelector('.dwell-sec');
+    const transitInput = node.querySelector('.transit-sec');
+    if (nameInput) {
+      nameInput.value = item.name || '';
+      nameInput.addEventListener('input', e => {
+        const v = e.target.value.trim();
+        if (v) item.name = v; else delete item.name;
+        nameEl.textContent = item.name || PATTERN_LABELS[item.pattern];
+        markDirty();
+      });
+    }
+    if (dwellInput) {
+      dwellInput.value = item.dwellSec ?? 1.5;
+      dwellInput.addEventListener('input', e => { item.dwellSec = +e.target.value; markDirty(); });
+    }
+    if (transitInput) {
+      transitInput.value = item.transitSec ?? 0.8;
+      transitInput.addEventListener('input', e => { item.transitSec = +e.target.value; markDirty(); });
+    }
+    renderSteps(node, item);
+    const addSel = node.querySelector('.add-step');
+    if (addSel) {
+      populatePositionSelect(addSel, '+ Position…', null);
+      addSel.addEventListener('change', e => {
+        if (!e.target.value) return;
+        if (!item.steps) item.steps = [];
+        item.steps.push({ position: e.target.value });
+        markDirty();
+        renderSteps(node, item);
+        e.target.value = '';
+      });
+    }
+  }
+
+  function renderSteps(node, item) {
+    const list = node.querySelector('.step-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const steps = item.steps || [];
+    steps.forEach((step, i) => {
+      const li = document.createElement('li');
+      li.className = 'step';
+
+      const sel = document.createElement('select');
+      sel.className = 'step-pos';
+      populatePositionSelect(sel, null, step.position);
+      sel.addEventListener('change', e => { step.position = e.target.value; markDirty(); });
+      li.appendChild(sel);
+
+      li.appendChild(makeStepBtn('↑', 'Move up', i === 0, () => {
+        [steps[i - 1], steps[i]] = [steps[i], steps[i - 1]];
+        markDirty();
+        renderSteps(node, item);
+      }));
+      li.appendChild(makeStepBtn('↓', 'Move down', i === steps.length - 1, () => {
+        [steps[i + 1], steps[i]] = [steps[i], steps[i + 1]];
+        markDirty();
+        renderSteps(node, item);
+      }));
+      li.appendChild(makeStepBtn('×', 'Remove step', false, () => {
+        steps.splice(i, 1);
+        markDirty();
+        renderSteps(node, item);
+      }, 'step-del'));
+
+      list.appendChild(li);
+    });
+  }
+
+  function makeStepBtn(text, title, disabled, fn, extraClass) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.title = title;
+    if (extraClass) b.className = extraClass;
+    if (disabled) b.disabled = true;
+    b.addEventListener('click', fn);
+    return b;
+  }
+
+  function populatePositionSelect(sel, placeholder, selected) {
+    sel.innerHTML = '';
+    if (placeholder) {
+      const opt = document.createElement('option');
+      opt.value = ''; opt.textContent = placeholder; opt.disabled = true; opt.selected = true;
+      sel.appendChild(opt);
+    }
+    for (const key of POSITION_KEYS) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = POSITION_LABELS[key];
+      if (key === selected) opt.selected = true;
+      sel.appendChild(opt);
+    }
   }
 
   function reorderItem(fromIdx, insertAt) {
@@ -230,6 +350,7 @@
     setVal('speed-input', state.config.speed);
     setVal('linger-input', state.config.lingerSec);
     setVal('linger-lead-input', state.config.lingerLeadFrac ?? 0);
+    setChecked('show-position-labels', !!state.config.showPositionLabels);
     if (state.config.field) {
       setVal('field-speed-input', state.config.field.speed ?? 3);
       setVal('field-palette-input', state.config.field.palette || 'Happy');
@@ -329,6 +450,7 @@
     bindInput('speed-input', e => { state.config.speed = +e.target.value; markDirty(); });
     bindInput('linger-input', e => { state.config.lingerSec = +e.target.value; markDirty(); });
     bindInput('linger-lead-input', e => { state.config.lingerLeadFrac = +e.target.value; markDirty(); });
+    bindChange('show-position-labels', e => { state.config.showPositionLabels = e.target.checked; markDirty(); });
   }
 
   function wireTabHandlers() {
