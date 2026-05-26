@@ -999,6 +999,35 @@ body.mode-field .balls-only { display: none !important; }
   background: var(--overlay);
   color: var(--subtext);
 }
+
+/* ---- Mirror card -------------------------------------------------- */
+/* Practitioner-facing live preview of the client's animation. Card
+   itself uses native CSS resize so the user can scale it from a
+   thumbnail to a focal view; manage.js persists the dimensions via a
+   ResizeObserver. The canvas stretches to fill .mirror-stage so it
+   re-renders crisply at every size. */
+#mirror-card {
+  resize: both;
+  overflow: hidden;
+  min-width: 240px;
+  min-height: 200px;
+}
+#mirror-card .mirror-stage {
+  margin-top: 8px;
+  background: #000;
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  overflow: hidden;
+  /* Stage stretches to fill the card body so resizing the card grows
+     the canvas underneath. */
+  height: calc(100% - 80px);
+  min-height: 140px;
+}
+#mirror-card .mirror-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .audio-state-pill[data-state="connected"] {
   background: color-mix(in oklab, #a6e3a1 30%, transparent);
   color: #a6e3a1;

@@ -152,6 +152,23 @@
         </footer>
       </section>
 
+      <!-- Mirror: a session-only card that renders what the client is
+           currently animating. Updates from `session-state` SSE events
+           with local-rAF extrapolation in between, so the canvas is
+           smooth and matches the client's ball within a frame or two.
+           Resizable via native `resize: both`; size persists in
+           localStorage. -->
+      <section id="mirror-card" class="card" data-views="session" hidden>
+        <header class="section-header">
+          <h3>Mirror</h3>
+          <span id="mirror-status" class="audio-state-pill" data-state="idle">idle</span>
+        </header>
+        <p id="mirror-hint" class="section-hint">
+          No connected session. Mirror lights up when a client joins and starts a pattern.
+        </p>
+        <div class="mirror-stage"><canvas id="mirror-canvas"></canvas></div>
+      </section>
+
       <!-- Audio: bidirectional voice over WebRTC. Idle shows a hint
            pointing at the session-card 📞 button (calls are initiated
            there). Ringing / connecting / connected show controls. -->
@@ -342,6 +359,7 @@
   </div>
 
   <script src="editor.js"></script>
+  <script src="patterns.js"></script>
   <script src="transfer.js"></script>
   <script src="audio.js"></script>
   <script src="manage.js"></script>

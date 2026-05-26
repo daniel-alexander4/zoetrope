@@ -538,10 +538,18 @@
       try { updateSessionStatus(JSON.parse(e.data).fingerprint, 'connected'); } catch (err) {}
     });
     es.addEventListener('session-disconnected', e => {
-      try { updateSessionStatus(JSON.parse(e.data).fingerprint, 'waiting'); } catch (err) {}
+      try {
+        const fp = JSON.parse(e.data).fingerprint;
+        updateSessionStatus(fp, 'waiting');
+        dropMirrorSnapshot(fp);
+      } catch (err) {}
     });
     es.addEventListener('session-removed', e => {
-      try { removeSessionFromList(JSON.parse(e.data).fingerprint); } catch (err) {}
+      try {
+        const fp = JSON.parse(e.data).fingerprint;
+        removeSessionFromList(fp);
+        dropMirrorSnapshot(fp);
+      } catch (err) {}
     });
     es.addEventListener('session-hello', e => {
       try { const ev = JSON.parse(e.data); setSessionLabel(ev.fingerprint, ev.label); } catch (err) {}
@@ -550,7 +558,11 @@
       try { const ev = JSON.parse(e.data); populateSessionPicker(ev.fingerprint, ev.payload); } catch (err) {}
     });
     es.addEventListener('session-state', e => {
-      try { const ev = JSON.parse(e.data); updateSessionDetail(ev.fingerprint, ev.payload); } catch (err) {}
+      try {
+        const ev = JSON.parse(e.data);
+        updateSessionDetail(ev.fingerprint, ev.payload);
+        captureMirrorSnapshot(ev.fingerprint, ev.payload);
+      } catch (err) {}
     });
     es.addEventListener('file-received', e => {
       try {
@@ -1155,6 +1167,158 @@
     }
   }
 
+  // ---- Mirror card --------------------------------------------------
+  //
+  // Live preview of the client's ball, driven by `session-state` SSE
+  // events plus local-rAF extrapolation between them. The shared pattern
+  // engine in `web/patterns.js` does the actual math; the mirror just
+  // supplies a ctx that points at the practitioner's config and the
+  // current snapshot's repeatIdx, so the same `(t, item, vp, ctx)`
+  // contract that drives the client renders the same shape here.
+  //
+  // For multi-session futures: today the mirror targets the first
+  // connected session with a snapshot. A per-session focus picker is a
+  // follow-on once real multi-session work surfaces it.
+  const MIRROR_SIZE_KEY = 'zoetrope.mirror.size';
+  state.mirrorSnapshots = new Map(); // fp → { pattern, item_idx, repeat_idx, t, playing, wallclock }
+
+  function captureMirrorSnapshot(fp, payload) {
+    if (!payload) return;
+    state.mirrorSnapshots.set(fp, {
+      pattern:    payload.pattern,
+      item_idx:   payload.item_idx ?? 0,
+      repeat_idx: payload.repeat_idx ?? 0,
+      t:          payload.t ?? 0,
+      playing:    !!payload.playing,
+      wallclock:  performance.now(),
+    });
+  }
+  function dropMirrorSnapshot(fp) {
+    state.mirrorSnapshots.delete(fp);
+  }
+
+  function pickMirrorTarget() {
+    // First session that's both connected and has a snapshot.
+    for (const [fp, snap] of state.mirrorSnapshots) {
+      const entry = state.sessions.get(fp);
+      if (!entry) continue;
+      if (entry.node.querySelector('.session-status')?.dataset.status !== 'connected') continue;
+      return { fp, snap };
+    }
+    return null;
+  }
+
+  function mirrorTick() {
+    requestAnimationFrame(mirrorTick);
+    const card = document.getElementById('mirror-card');
+    if (!card || card.offsetParent === null) return; // not in current view
+
+    const canvas = document.getElementById('mirror-canvas');
+    const stage = canvas.parentElement;
+    const w = stage.clientWidth;
+    const h = stage.clientHeight;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    const c2d = canvas.getContext('2d');
+
+    const status = document.getElementById('mirror-status');
+    const hint = document.getElementById('mirror-hint');
+    const target = pickMirrorTarget();
+
+    if (!target) {
+      c2d.fillStyle = '#000';
+      c2d.fillRect(0, 0, w, h);
+      hint.hidden = false;
+      status.textContent = 'idle';
+      status.dataset.state = 'idle';
+      return;
+    }
+
+    const playlists = state.config?.playlists || [];
+    const active = playlists.find(p => p.name === state.config?.activePlaylist) || playlists[0];
+    const items = active?.items || [];
+    const item = items[target.snap.item_idx];
+    const fn = item && window.zoetropePatterns.patterns[target.snap.pattern];
+    if (!item || !fn) {
+      c2d.fillStyle = state.config?.background || '#000';
+      c2d.fillRect(0, 0, w, h);
+      hint.hidden = false;
+      hint.textContent = 'Connected, but playlist item out of range. Was the playlist edited?';
+      status.textContent = 'live';
+      status.dataset.state = 'connected';
+      return;
+    }
+
+    hint.hidden = true;
+    status.textContent = target.snap.playing ? 'live' : 'paused';
+    status.dataset.state = target.snap.playing ? 'connected' : 'idle';
+
+    // Ball proportional to the smaller mirror dimension so the trajectory
+    // looks right at any card size — using the absolute config.ballSize
+    // (sized for the full client viewport) would make the ball comically
+    // large in a 300×200 thumbnail.
+    const mirrorBallSize = Math.max(8, Math.min(w, h) * 0.08);
+    const mirrorCtx = {
+      config: { ...state.config, ballSize: mirrorBallSize },
+      speedMul: 1,
+      repeatIdx: target.snap.repeat_idx,
+      bounceStart: { x: w / 2, y: h / 2 },
+    };
+    const cycleSec = window.zoetropePatterns.computeCycleSec(item, mirrorCtx);
+    const elapsedSec = target.snap.playing
+      ? (performance.now() - target.snap.wallclock) / 1000
+      : 0;
+    let t = target.snap.t ?? 0;
+    if (target.snap.playing && isFinite(cycleSec) && cycleSec > 0) {
+      t += elapsedSec / cycleSec;
+      t = ((t % 1) + 1) % 1;
+    }
+
+    c2d.fillStyle = state.config?.background || '#000';
+    c2d.fillRect(0, 0, w, h);
+
+    const { x, y, sizeMul = 1 } = fn(t, item, { w, h }, mirrorCtx);
+    c2d.beginPath();
+    c2d.arc(x, y, Math.max(2, mirrorBallSize / 2 * sizeMul), 0, Math.PI * 2);
+    c2d.fillStyle = item.color || '#fff';
+    c2d.fill();
+  }
+
+  function setupMirror() {
+    const card = document.getElementById('mirror-card');
+    if (!card) return;
+    // Restore the practitioner's last-set size.
+    try {
+      const saved = JSON.parse(localStorage.getItem(MIRROR_SIZE_KEY) || 'null');
+      if (saved && saved.w && saved.h) {
+        card.style.width = saved.w + 'px';
+        card.style.height = saved.h + 'px';
+      }
+    } catch (err) { /* corrupted — keep default size */ }
+
+    // Persist size after the user finishes resizing. ResizeObserver fires
+    // on every pixel-change; debounce 500 ms so we don't hammer
+    // localStorage during a drag.
+    let saveTimer = null;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        const rect = card.getBoundingClientRect();
+        try {
+          localStorage.setItem(MIRROR_SIZE_KEY, JSON.stringify({
+            w: Math.round(rect.width),
+            h: Math.round(rect.height),
+          }));
+        } catch (err) { /* quota / disabled — silent */ }
+      }, 500);
+    });
+    ro.observe(card);
+
+    requestAnimationFrame(mirrorTick);
+  }
+
   // ---- Init -----------------------------------------------------------
 
   async function init() {
@@ -1172,6 +1336,7 @@
     });
     setupMICardDrag();
     wireFilesCard();
+    setupMirror();
     startEventSource();
     heartbeat();
   }

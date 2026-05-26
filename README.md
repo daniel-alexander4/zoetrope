@@ -260,6 +260,23 @@ is responsible for retention, consent, and compliance with their
 jurisdiction; nothing about this feature is synced or transmitted
 off-device.
 
+### Manager mirror
+
+In Session view, the **Mirror** card renders a live preview of the
+client's ball — same pattern, same direction, same gaze positions —
+so the practitioner can see what the client sees without looking at the
+client's screen. Updates from the `state` frames the client already
+sends on transport events; the mirror's local rAF extrapolates the
+cycle fraction in between for a smooth canvas.
+
+The card is resizable: drag its lower-right corner to scale from a
+thumbnail to a focal view. Size persists per machine via
+`localStorage`.
+
+Multi-session note: today the mirror targets the first connected
+session that has reported state. A per-session focus picker is a
+follow-on once multi-session usage surfaces it.
+
 ### Voice call
 
 Either side can place a voice call across an active session. The 📞
@@ -314,7 +331,11 @@ Storage depends on whether the session is bound to a client:
   and stays there across session removal and binary restarts. The MI
   Files card lists every received file for that client with Open +
   Dismiss; Save / Open from the inline notification fetch the same
-  bytes.
+  bytes. **Retention is the practitioner's responsibility** — zoetrope
+  applies no quota, FIFO eviction, or automatic expiration; entries
+  sit on disk until the practitioner dismisses them. Same framing as
+  the rest of client records: you own retention, consent, and
+  jurisdictional compliance.
 - **Unbound session** — the bytes live in memory only and are dropped
   five minutes after arrival if the user hasn't fetched them. Save or
   Open consumes the in-memory entry.
@@ -379,6 +400,7 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 ├── clients.go      client + session records (on-disk schema, atomic writes)
 ├── bridge.go       SSE bus between Go and browser tabs
 ├── web/            embedded UI (HTML/CSS/JS)
+│   ├── patterns.js SoT for the animation kinematics (client + manager mirror)
 │   └── audio.js    SoT for the in-browser WebRTC voice-call state machine
 └── build/          cross-compile script, Info.plist, .desktop entry, lipo helper
 ```

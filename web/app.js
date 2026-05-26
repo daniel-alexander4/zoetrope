@@ -58,254 +58,18 @@
   }
 
   // ---- Patterns ---------------------------------------------------------
-  // Each pattern is a pure function (t, item, vp) -> {x, y, sizeMul?},
-  // where t in [0, 1) represents one full cycle. cx, cy = canvas
-  // center. margin keeps the ball inside the visible area. sizeMul
-  // (default 1) lets a pattern scale the ball — used by linear sweeps
-  // when "edge linger" is on to pulse the ball at each extreme.
-
-  const LINGER_PEAK = 2; // ball grows to 2× baseline at the linger midpoint
-
-  function isLinearPattern(p) {
-    return p === 'h-sweep' || p === 'v-sweep' || p === 'diag-ulbr' || p === 'diag-urbl';
-  }
-
-  function isSequencePattern(p) {
-    return p === 'position-sequence';
-  }
-
-  // ---- Gaze grid (position-sequence patterns) ---------------------------
-  // Named targets on a 3×3 grid: 8 cardinals/diagonals + center. Coordinates
-  // are normalized to [-1, +1]; the actual pixel position is computed per
-  // frame from the live viewport so the grid scales with window resize.
-  const GAZE_POSITIONS = {
-    'center':    { ux:  0, uy:  0 },
-    'up':        { ux:  0, uy: -1 },
-    'up-l':      { ux: -1, uy: -1 },
-    'up-r':      { ux:  1, uy: -1 },
-    'lateral-l': { ux: -1, uy:  0 },
-    'lateral-r': { ux:  1, uy:  0 },
-    'down':      { ux:  0, uy:  1 },
-    'down-l':    { ux: -1, uy:  1 },
-    'down-r':    { ux:  1, uy:  1 },
-  };
-  const POSITION_LABELS = {
-    'center':    'Center',
-    'up':        'Up',
-    'up-l':      'Up-L',
-    'up-r':      'Up-R',
-    'lateral-l': 'Lateral-L',
-    'lateral-r': 'Lateral-R',
-    'down':      'Down',
-    'down-l':    'Down-L',
-    'down-r':    'Down-R',
-  };
-  const POSITION_INSET = 80; // px margin from viewport edge
-
-  function positionToCanvas(name, vp) {
-    const pos = GAZE_POSITIONS[name] || GAZE_POSITIONS.center;
-    return {
-      x: vp.w / 2 + pos.ux * (vp.w / 2 - POSITION_INSET),
-      y: vp.h / 2 + pos.uy * (vp.h / 2 - POSITION_INSET),
-    };
-  }
-
-  function sequenceCycleSec(item) {
-    const steps = item.steps || [];
-    if (steps.length === 0) return 0.1;
-    const dwell = Math.max(0, item.dwellSec ?? 1.5);
-    const transit = Math.max(0, item.transitSec ?? 0.8);
-    return Math.max(0.1, steps.length * (dwell + transit));
-  }
-
-  // Fraction of the current cycle spent in each linger phase. 0 when
-  // linger is disabled, when the pattern isn't linear, or when paused.
-  function lingerFrac(pattern) {
-    if (!isLinearPattern(pattern)) return 0;
-    const sec = state.config.lingerSec ?? 0;
-    if (sec <= 0) return 0;
-    const cps = (Math.max(0, state.config.speed ?? 2) / 10) * state.speedMul;
-    if (cps <= 0) return 0;
-    const baseCycle = 1 / cps;
-    return sec / (baseCycle + 2 * sec);
-  }
-
-  // For linear patterns: map cycle fraction t to a position in [-1, +1]
-  // and a size multiplier, inserting a dwell-and-pulse at each extreme.
-  // L is the fraction of one cycle taken by *each* linger phase. The size
-  // pulse extends `lead` past the dwell on each side so growth begins
-  // during the approach and shrink finishes during the departure.
-  function linearSchedule(t, L) {
-    if (L <= 0 || L >= 0.5) {
-      return { pos: -Math.cos(TAU * t), sizeMul: 1 };
-    }
-    const half = (1 - 2 * L) / 2; // each moving phase fraction
-    const leadFrac = Math.max(0, state.config.lingerLeadFrac ?? 0);
-    const lead = Math.min(L, half) * leadFrac;
-    const pulseLen = L + 2 * lead;
-
-    let pos;
-    if (t < half) {
-      pos = -Math.cos(Math.PI * (t / half));
-    } else if (t < half + L) {
-      pos = 1;
-    } else if (t < 2 * half + L) {
-      pos = Math.cos(Math.PI * ((t - half - L) / half));
-    } else {
-      pos = -1;
-    }
-
-    // One sine pulse per edge, centered on its dwell midpoint but widened
-    // by `lead` into both adjacent motion phases. The −1 pulse wraps the
-    // cycle boundary (trailing half lives in the next cycle's start).
-    let u = -1;
-    if (t >= half - lead && t < half + L + lead) {
-      u = (t - (half - lead)) / pulseLen;
-    } else if (t >= 1 - L - lead) {
-      u = (t - (1 - L - lead)) / pulseLen;
-    } else if (t < lead) {
-      u = (t + L + lead) / pulseLen;
-    }
-    const sizeMul = u >= 0
-      ? 1 + (LINGER_PEAK - 1) * Math.sin(Math.PI * u)
-      : 1;
-
-    return { pos, sizeMul };
-  }
-
-  const patterns = {
-    'h-sweep': (t, item, vp) => {
-      const m = state.config.ballSize / 2;
-      const amp = (vp.w - 2 * m) / 2;
-      const cx = vp.w / 2;
-      const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('h-sweep'));
-      return { x: cx + amp * pos, y: cy, sizeMul };
-    },
-
-    'v-sweep': (t, item, vp) => {
-      const m = state.config.ballSize / 2;
-      const amp = (vp.h - 2 * m) / 2;
-      const cx = vp.w / 2;
-      const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('v-sweep'));
-      return { x: cx, y: cy + amp * pos, sizeMul };
-    },
-
-    'circle': (t, item, vp) => {
-      const m = state.config.ballSize / 2;
-      const r = Math.min(vp.w, vp.h) / 2 - m - 8;
-      const cx = vp.w / 2;
-      const cy = vp.h / 2;
-      const dir = item.direction === 'ccw' ? -1 : 1;
-      const a = dir * TAU * t;
-      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-    },
-
-    'infinity-v': (t, item, vp) => {
-      // Vertical infinity (8 standing up — lobes stacked).
-      const m = state.config.ballSize / 2;
-      const ampX = (vp.w - 2 * m) / 2 - 8;
-      const ampY = (vp.h - 2 * m) / 2 - 8;
-      const cx = vp.w / 2;
-      const cy = vp.h / 2;
-      const sign = item.direction === 'ccw' ? -1 : 1;
-      return {
-        x: cx + sign * ampX * Math.sin(TAU * 2 * t),
-        y: cy + ampY * Math.sin(TAU * t),
-      };
-    },
-
-    'infinity-h': (t, item, vp) => {
-      // Horizontal infinity (∞ on its side — lobes side by side).
-      const m = state.config.ballSize / 2;
-      const ampX = (vp.w - 2 * m) / 2 - 8;
-      const ampY = (vp.h - 2 * m) / 2 - 8;
-      const cx = vp.w / 2;
-      const cy = vp.h / 2;
-      const sign = item.direction === 'ccw' ? -1 : 1;
-      return {
-        x: cx + ampX * Math.sin(TAU * t),
-        y: cy + sign * ampY * Math.sin(TAU * 2 * t),
-      };
-    },
-
-    'diag-ulbr': (t, item, vp) => {
-      // Upper-left ↔ bottom-right diagonal sweep.
-      const m = state.config.ballSize / 2;
-      const ampX = (vp.w - 2 * m) / 2;
-      const ampY = (vp.h - 2 * m) / 2;
-      const cx = vp.w / 2;
-      const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('diag-ulbr'));
-      return { x: cx + ampX * pos, y: cy + ampY * pos, sizeMul };
-    },
-
-    'diag-urbl': (t, item, vp) => {
-      // Upper-right ↔ bottom-left diagonal sweep.
-      const m = state.config.ballSize / 2;
-      const ampX = (vp.w - 2 * m) / 2;
-      const ampY = (vp.h - 2 * m) / 2;
-      const cx = vp.w / 2;
-      const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('diag-urbl'));
-      return { x: cx - ampX * pos, y: cy + ampY * pos, sizeMul };
-    },
-
-    'bounce': (t, item, vp) => {
-      // The ball travels in a straight line at constant speed; reflections
-      // off the inner-rectangle walls are folded via a triangle wave so
-      // the trajectory is continuous across repeats.
-      const m = state.config.ballSize / 2;
-      const innerW = vp.w - 2 * m;
-      const innerH = vp.h - 2 * m;
-      const speed = Math.max(vp.w, vp.h); // unfolded distance per cycle
-      const angle = ((item.angleDeg ?? 37) * Math.PI) / 180;
-      const totalT = state.repeatIdx + t;
-      const ux = Math.cos(angle) * speed * totalT;
-      const uy = Math.sin(angle) * speed * totalT;
-      return {
-        x: triangleFold(state.bounceStart.x + ux - m, innerW) + m,
-        y: triangleFold(state.bounceStart.y + uy - m, innerH) + m,
-      };
-    },
-
-    'position-sequence': (t, item, vp) => {
-      // Step the ball through item.steps, dwelling per step and smoothly
-      // pursuing to the next. Cycle length is derived from steps × (dwell +
-      // transit) and is what advance() uses to scale dt — so t here is the
-      // [0, 1) progress through one full sequence.
-      const steps = item.steps || [];
-      if (steps.length === 0) return { x: vp.w / 2, y: vp.h / 2 };
-      const dwell = Math.max(0, item.dwellSec ?? 1.5);
-      const transit = Math.max(0, item.transitSec ?? 0.8);
-      const stepLen = dwell + transit;
-      if (stepLen <= 0) return positionToCanvas(steps[0].position, vp);
-
-      const elapsed = t * steps.length * stepLen;
-      const idx = Math.min(steps.length - 1, Math.floor(elapsed / stepLen));
-      const into = elapsed - idx * stepLen;
-      const from = positionToCanvas(steps[idx].position, vp);
-      if (into < dwell || transit === 0) return from;
-
-      // Smooth-pursuit transit toward the next step (wraps to step 0 on
-      // the last step). Cosine ease-in-out: 0 velocity at both ends so the
-      // ball arrives at and leaves each position cleanly.
-      const next = steps[(idx + 1) % steps.length];
-      const to = positionToCanvas(next.position, vp);
-      const u = (into - dwell) / transit;
-      const e = 0.5 - 0.5 * Math.cos(Math.PI * u);
-      return { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
-    },
-  };
-
-  function triangleFold(v, span) {
-    if (span <= 0) return 0;
-    const period = 2 * span;
-    let m = ((v % period) + period) % period;
-    if (m > span) m = period - m;
-    return m;
-  }
+  // The pattern engine itself lives in web/patterns.js so the manager
+  // mirror (web/manage.js) can call into the same kinematics with its
+  // own canvas. Pull the bits this module needs into local names so the
+  // animation loop below reads the same as before.
+  const {
+    patterns,
+    GAZE_POSITIONS,
+    POSITION_LABELS,
+    positionToCanvas,
+    isSequencePattern,
+    computeCycleSec,
+  } = window.zoetropePatterns;
 
   // ---- Animation --------------------------------------------------------
 
@@ -334,21 +98,8 @@
     // (10 = 1 cycle/sec). For position-sequence patterns it's a tempo
     // multiplier where speed=2 honors the configured dwell/transit, higher
     // = faster, lower = slower. Same gate either way: speed=0 → paused.
-    const userSpeed = Math.max(0, state.config.speed ?? 2);
-    const speedScale = (userSpeed / 2) * state.speedMul;
-    if (speedScale <= 0) return;
-
-    let cycleSec;
-    if (isSequencePattern(item.pattern)) {
-      cycleSec = sequenceCycleSec(item) / speedScale;
-    } else {
-      const cps = (userSpeed / 10) * state.speedMul;
-      const linger = state.config.lingerSec ?? 0;
-      const baseCycle = 1 / cps;
-      cycleSec = isLinearPattern(item.pattern) && linger > 0
-        ? baseCycle + 2 * linger
-        : baseCycle;
-    }
+    const cycleSec = computeCycleSec(item, state);
+    if (!isFinite(cycleSec)) return; // paused
     state.t += dt / cycleSec;
     while (state.t >= 1) {
       state.t -= 1;
@@ -375,7 +126,7 @@
       drawPositionLabels(vp);
     }
 
-    const { x, y, sizeMul = 1 } = fn(state.t, item, vp);
+    const { x, y, sizeMul = 1 } = fn(state.t, item, vp, state);
     ctx.beginPath();
     ctx.arc(x, y, (state.config.ballSize || 80) / 2 * sizeMul, 0, TAU);
     ctx.fillStyle = item.color || '#fff';
@@ -999,6 +750,11 @@
         pattern: item?.pattern || null,
         step_idx: stepIdx,
         step_count: stepCount,
+        // Cycle fraction at the moment of capture. Manager's mirror uses
+        // this + receipt-wallclock to extrapolate forward between state
+        // events, so the canvas stays smooth even without a state push
+        // every frame.
+        t: state.t,
       }),
     }).catch(()=>{});
   }
