@@ -216,8 +216,27 @@
     status.textContent = info.sizeBytes ? ('Queued · ' + formatBytes(info.sizeBytes)) : 'Queued';
     card.appendChild(status);
 
+    // Cancel button — DELETEs /api/transfers/{id}. The goroutine on the
+    // Go side notices the abort on its next chunk boundary and emits a
+    // transfer-failed event with reason "canceled by sender" which
+    // handleLifecycle below removes the button and surfaces.
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'xfer-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', async () => {
+      cancelBtn.disabled = true;
+      try {
+        await fetch('/api/transfers/' + encodeURIComponent(info.id), {
+          method: 'DELETE',
+          headers: { 'X-Zoetrope': '1' },
+        });
+      } catch (err) { console.warn('cancel:', err); }
+    });
+    card.appendChild(cancelBtn);
+
     host.appendChild(card);
-    outboundCards.set(info.id, { card, label, bar, status, accepted: false });
+    outboundCards.set(info.id, { card, label, bar, status, cancelBtn, accepted: false });
     return card;
   }
 
@@ -241,6 +260,7 @@
     } else if (kind === 'completed') {
       c.bar.value = c.bar.max;
       c.status.textContent = 'Sent.';
+      if (c.cancelBtn) c.cancelBtn.remove();
       setTimeout(() => {
         c.card.remove();
         outboundCards.delete(ev.transfer_id);
@@ -248,6 +268,7 @@
     } else if (kind === 'failed') {
       c.status.textContent = 'Failed: ' + (ev.reason || 'unknown');
       c.card.classList.add('xfer-progress-failed');
+      if (c.cancelBtn) c.cancelBtn.remove();
       const close = mkBtn('Dismiss', () => {
         c.card.remove();
         outboundCards.delete(ev.transfer_id);

@@ -102,9 +102,10 @@ type modeState struct {
 	// File transfers (see transfer.go). Held on modeState rather than per
 	// session so the client-mode (single-peer) and manager-mode (multi-peer)
 	// paths share one table; entries record sourceFP for routing.
-	transferMu sync.Mutex
-	inProgress map[string]*transferRX
-	inbox      map[string]*inboxEntry
+	transferMu  sync.Mutex
+	inProgress  map[string]*transferRX
+	inbox       map[string]*inboxEntry
+	outProgress map[string]*transferTX // in-flight outbound transfers, keyed by transfer_id; populated by writeTransfer for the CancelOutbound API
 
 	// Client manager (see clients.go). Bindings live alongside the session
 	// table: sessionClients maps cert-fp → client-id for sessions that were
@@ -129,6 +130,7 @@ func newModeState(appName string, bus *eventBus, store *configStore, clients *cl
 		sessions:          make(map[string]*session),
 		inProgress:        make(map[string]*transferRX),
 		inbox:             make(map[string]*inboxEntry),
+		outProgress:       make(map[string]*transferTX),
 		clients:           clients,
 		sessionClients:    make(map[string]string),
 		activeSessionLogs: make(map[string]string),

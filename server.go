@@ -232,6 +232,17 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 	mux.HandleFunc("POST /api/network/transfer", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
 		handleOutboundTransfer(w, r, store, modes.SendFileToManager)
 	}))
+	// Sender-initiated abort: cancel an in-flight outbound transfer.
+	// 404 if the id isn't in the outProgress map (already completed,
+	// already failed, or never existed). One endpoint for both
+	// directions — modeState.outProgress is process-wide.
+	mux.HandleFunc("DELETE /api/transfers/{id}", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		if err := modes.CancelOutbound(r.PathValue("id")); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	mux.HandleFunc("GET /api/inbox/{id}", func(w http.ResponseWriter, r *http.Request) {
 		entry, ok := modes.consumeInbox(r.PathValue("id"))
 		if !ok {

@@ -47,6 +47,15 @@ const (
 	transferChunkWriteTimeout = 30 * time.Second
 )
 
+// transferTX is the sender-side handle needed to abort an in-flight
+// outbound transfer mid-stream. Held in m.outProgress while a
+// writeTransfer goroutine is running; CancelOutbound looks it up and
+// calls cancel() to signal the goroutine to stop and notify the peer.
+type transferTX struct {
+	name   string
+	cancel context.CancelFunc
+}
+
 // transferRX is one in-progress inbound transfer.
 type transferRX struct {
 	id           string
@@ -284,6 +293,37 @@ func (m *modeState) abortInbound(id string) {
 	m.transferMu.Unlock()
 }
 
+// registerOutbound records an in-flight outbound transfer so
+// CancelOutbound can find it. Paired with unregisterOutbound on every
+// exit path of writeTransfer / writeTransferLoopback.
+func (m *modeState) registerOutbound(id, name string, cancel context.CancelFunc) {
+	m.transferMu.Lock()
+	m.outProgress[id] = &transferTX{name: name, cancel: cancel}
+	m.transferMu.Unlock()
+}
+
+func (m *modeState) unregisterOutbound(id string) {
+	m.transferMu.Lock()
+	delete(m.outProgress, id)
+	m.transferMu.Unlock()
+}
+
+// CancelOutbound signals the in-flight writeTransfer goroutine for id
+// to abort. The goroutine handles its own cleanup — notifies the peer
+// with a file-cancel frame, publishes transfer-failed, and unregisters
+// itself. Returns "not found" if the transfer already completed or
+// never existed.
+func (m *modeState) CancelOutbound(id string) error {
+	m.transferMu.Lock()
+	tx, ok := m.outProgress[id]
+	m.transferMu.Unlock()
+	if !ok {
+		return fmt.Errorf("transfer %s not found", id)
+	}
+	tx.cancel()
+	return nil
+}
+
 // consumeInbox returns and deletes a completed transfer. Used by the
 // /api/inbox/{id} handler — Save/Open in the browser is a one-shot fetch.
 func (m *modeState) consumeInbox(id string) (*inboxEntry, bool) {
@@ -432,6 +472,27 @@ func (m *modeState) writeTransferLoopback(sess *session, id, name, mime string, 
 	}
 	sizeBytes := int64(len(data))
 
+	abortCtx, abortFn := context.WithCancel(context.Background())
+	m.registerOutbound(id, name, abortFn)
+	defer m.unregisterOutbound(id)
+	defer abortFn()
+
+	// announceCancelLoopback dispatches file-cancel into the local receive
+	// path so the receiver drops its inbound state, then publishes
+	// transfer-failed for the sender's UI. Mirrors the WS path's
+	// sendCancel + transfer-failed pair.
+	announceCancelLoopback := func() {
+		cancelFrame := map[string]any{
+			"type":        "file-cancel",
+			"transfer_id": id,
+			"reason":      "canceled by sender",
+		}
+		if raw, err := json.Marshal(cancelFrame); err == nil {
+			m.handleInboundTransferFrame("file-cancel", raw, loopbackSessionFP, sess, nil, direction)
+		}
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: "canceled by sender"})
+	}
+
 	offerFrame := map[string]any{
 		"type":        "file-offer",
 		"transfer_id": id,
@@ -455,6 +516,10 @@ func (m *modeState) writeTransferLoopback(sess *session, id, name, mime string, 
 	})
 
 	for i := 0; i < chunks; i++ {
+		if abortCtx.Err() != nil {
+			announceCancelLoopback()
+			return abortCtx.Err()
+		}
 		start := i * transferRawChunk
 		end := start + transferRawChunk
 		if end > len(data) {
@@ -503,6 +568,20 @@ func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, id, name,
 	}
 	sizeBytes := int64(len(data))
 
+	// Per-transfer abort context: CancelOutbound flips this when the
+	// user clicks Cancel, which makes the next chunk's writeFrame return
+	// immediately with ctx.Err() instead of writing to the wire.
+	abortCtx, abortFn := context.WithCancel(context.Background())
+	m.registerOutbound(id, name, abortFn)
+	defer m.unregisterOutbound(id)
+	defer abortFn()
+
+	canceledBySender := func() bool { return abortCtx.Err() != nil }
+	announceCancel := func() {
+		sendCancel(conn, sess, id, "canceled by sender")
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: "canceled by sender"})
+	}
+
 	offer := map[string]any{
 		"type":        "file-offer",
 		"transfer_id": id,
@@ -512,9 +591,13 @@ func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, id, name,
 		"chunks":      chunks,
 	}
 	stampSeq(sess, offer)
-	offerCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	offerCtx, cancel := context.WithTimeout(abortCtx, 10*time.Second)
 	if err := writeFrame(offerCtx, conn, offer); err != nil {
 		cancel()
+		if canceledBySender() {
+			announceCancel()
+			return abortCtx.Err()
+		}
 		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: "send offer: " + err.Error()})
 		return fmt.Errorf("send offer: %w", err)
 	}
@@ -526,6 +609,10 @@ func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, id, name,
 	})
 
 	for i := 0; i < chunks; i++ {
+		if canceledBySender() {
+			announceCancel()
+			return abortCtx.Err()
+		}
 		start := i * transferRawChunk
 		end := start + transferRawChunk
 		if end > len(data) {
@@ -538,10 +625,14 @@ func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, id, name,
 			"data":        base64.RawStdEncoding.EncodeToString(data[start:end]),
 		}
 		stampSeq(sess, frame)
-		ctx, ccancel := context.WithTimeout(context.Background(), transferChunkWriteTimeout)
+		ctx, ccancel := context.WithTimeout(abortCtx, transferChunkWriteTimeout)
 		err := writeFrame(ctx, conn, frame)
 		ccancel()
 		if err != nil {
+			if canceledBySender() {
+				announceCancel()
+				return abortCtx.Err()
+			}
 			m.bus.Publish("transfer-failed", transferLifecycleEvent{
 				TransferID: id, Name: name,
 				Reason: fmt.Sprintf("send chunk %d/%d: %v", i+1, chunks, err),
