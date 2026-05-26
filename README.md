@@ -219,8 +219,35 @@ JSON frames over a WebSocket inside the TLS connection. Manager → client:
 `play`, `pause`, `resume`, `advance`, `back`, `hold`, `release`, `stop`,
 `set-sequence`. Client → manager: `hello`, `sequences`, `state`.
 Bidirectional: `file-offer`, `file-chunk`, `file-cancel` (see File sharing
-below). Every frame carries `pv: 1` so future revisions can negotiate
+below); `audio-offer`, `audio-answer`, `audio-ice`, `audio-bye` (see Voice
+call). Every frame carries `pv: 1` so future revisions can negotiate
 cleanly.
+
+### Voice call
+
+Either side can place a voice call across an active session. The 📞
+button on each session card (manager) and in the client overlay
+(client) starts the call; the other side sees an Accept / Decline
+prompt. Once accepted, audio flows direct browser↔browser over
+DTLS-SRTP (UDP) — the Go process relays only the SDP / ICE signaling
+verbs (`audio-offer` / `audio-answer` / `audio-ice` / `audio-bye`) over
+the existing mTLS WebSocket.
+
+The MI Audio card shows the active call's state pill, mic-mute, speaker
+volume slider, and an End-call button. Mic mute is local-only — the
+muted user can still hear the peer. Speaker volume + mute are local.
+Hanging up sends `audio-bye` and tears the peer connection down on
+both sides.
+
+No STUN or TURN servers are contacted — keeping the "no telemetry, no
+phone-home" rule intact. The manager's address is already public (it's
+in the session URL), so ICE works in friendly NAT environments via
+host + peer-reflexive candidates. Restrictive symmetric NATs may need
+additional firewall work; this is a known limit.
+
+Headphones are recommended on both sides. Browsers do echo cancellation
+on the microphone path, but a speaker that's audible to the mic can
+still cause feedback that AEC won't fully suppress.
 
 ### File sharing
 
@@ -295,5 +322,6 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 ├── transfer.go     file-transfer protocol (chunking, inbox, caps)
 ├── bridge.go       SSE bus between Go and browser tabs
 ├── web/            embedded UI (HTML/CSS/JS)
+│   └── audio.js    SoT for the in-browser WebRTC voice-call state machine
 └── build/          cross-compile script, Info.plist, .desktop entry, lipo helper
 ```

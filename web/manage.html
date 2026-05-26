@@ -126,6 +126,37 @@
         </footer>
       </section>
 
+      <!-- Audio: bidirectional voice over WebRTC. Idle shows a hint
+           pointing at the session-card 📞 button (calls are initiated
+           there). Ringing / connecting / connected show controls. -->
+      <section id="audio-card" class="card" hidden>
+        <header class="section-header">
+          <h3>Audio</h3>
+          <span id="audio-state-pill" class="audio-state-pill" data-state="idle">idle</span>
+        </header>
+        <p id="audio-idle-hint" class="section-hint">
+          No active call. Use 📞 on a session card to start one.
+        </p>
+        <div id="audio-incoming" class="audio-incoming" hidden>
+          <p>Incoming call from <strong id="audio-incoming-label"></strong></p>
+          <div class="audio-incoming-actions">
+            <button id="audio-accept" type="button" class="primary-cta">Accept</button>
+            <button id="audio-decline" type="button" class="ghost">Decline</button>
+          </div>
+        </div>
+        <div id="audio-active" class="audio-active" hidden>
+          <p>Talking with <strong id="audio-active-label"></strong></p>
+          <div class="audio-controls">
+            <button id="audio-mic-mute" type="button" class="regen">🎤 Mute</button>
+            <label class="audio-vol">
+              <span>🔊</span>
+              <input type="range" id="audio-volume" min="0" max="100" step="1" value="100">
+            </label>
+            <button id="audio-hangup" type="button" class="danger">End call</button>
+          </div>
+        </div>
+      </section>
+
       <section id="identity-panel" class="card identity-card" hidden data-collapsed="true">
         <header class="identity-header">
           <h3>My identity</h3>
@@ -209,6 +240,7 @@
         <button class="ctl-advance" data-verb="advance" title="Next sequence">▶▶</button>
         <button class="ctl-stop" data-verb="stop" title="Pause and reset to first sequence">Reset</button>
         <select class="session-picker" title="Jump to a specific sequence"></select>
+        <button class="session-call" title="Start a voice call with this client">📞</button>
         <button class="session-attach" title="Send a file to this client">📎</button>
       </div>
       <div class="session-inbox"></div>
@@ -229,6 +261,7 @@
 
   <script src="editor.js"></script>
   <script src="transfer.js"></script>
+  <script src="audio.js"></script>
   <script src="manage.js"></script>
 </body>
 </html>

@@ -169,12 +169,30 @@
     </li>
   </template>
 
-  <!-- Client-mode overlay: pill, attach (file send), and leave button when
-       in client mode. Inbound file notifications stack below as toasts. -->
+  <!-- Client-mode overlay: pill, call (voice), attach (file send), and
+       leave button when in client mode. Inbound file notifications and
+       the in-call audio controls stack below this. -->
   <div id="client-status">
     <span id="client-pill" data-state="connecting">Connecting…</span>
+    <button id="btn-client-call" title="Start a voice call with the practitioner">📞</button>
     <button id="btn-client-attach" title="Send a file to the practitioner">📎</button>
     <button id="btn-leave" title="End the session and return to standalone">Leave session</button>
+  </div>
+  <div id="client-audio" hidden>
+    <div id="client-audio-incoming" hidden>
+      <span>Incoming call from the practitioner</span>
+      <button id="client-audio-accept" type="button" class="primary-cta">Accept</button>
+      <button id="client-audio-decline" type="button" class="ghost">Decline</button>
+    </div>
+    <div id="client-audio-active" hidden>
+      <span id="client-audio-state">Connecting…</span>
+      <button id="client-audio-mic" type="button">🎤 Mute</button>
+      <label class="audio-vol">
+        <span>🔊</span>
+        <input type="range" id="client-audio-volume" min="0" max="100" step="1" value="100">
+      </label>
+      <button id="client-audio-hangup" type="button" class="danger">End call</button>
+    </div>
   </div>
   <div id="client-inbox"></div>
 
@@ -207,6 +225,7 @@
 
   <script src="editor.js"></script>
   <script src="transfer.js"></script>
+  <script src="audio.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

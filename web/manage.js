@@ -94,6 +94,8 @@
       stopBtn.hidden = false;
       enterMiBtn.disabled = false;
       enterMiBtn.title = 'Open the Management Interface';
+      const audioCard = document.getElementById('audio-card');
+      if (audioCard) audioCard.hidden = false;
       document.getElementById('practitioner-fp').dataset.full = snap.practitioner_fp || '';
       document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
       refreshIdentityDisplay();
@@ -114,6 +116,13 @@
       stopBtn.hidden = true;
       enterMiBtn.disabled = true;
       enterMiBtn.title = 'Generate a connection string first to engage hosting';
+      const audioCard = document.getElementById('audio-card');
+      if (audioCard) audioCard.hidden = true;
+      // Leaving manager → hang up any in-flight call so we don't hold the
+      // mic open or leak a live peer connection.
+      if (window.zoetropeAudio && window.zoetropeAudio.getState().state !== 'idle') {
+        window.zoetropeAudio.hangup();
+      }
       state.sessions.clear();
       document.getElementById('sessions-list').innerHTML = '';
       document.getElementById('start-error').textContent = '';
@@ -276,6 +285,25 @@
         attachBtn.disabled = false;
       }
     });
+    const callBtn = node.querySelector('.session-call');
+    callBtn.addEventListener('click', async () => {
+      const audio = window.zoetropeAudio;
+      if (!audio) return;
+      const cur = audio.getState();
+      if (cur.state !== 'idle') {
+        alert('Already in a call (' + (cur.peerLabel || cur.peerFP || 'peer') + ').');
+        return;
+      }
+      const entry = state.sessions.get(fp);
+      const label = entry?.node.querySelector('.session-label').textContent || fp.slice(0, 12);
+      try {
+        await audio.startCall(fp, label);
+        setView('mi'); // active call lives in MI; flip the user there so they see status
+      } catch (err) {
+        console.warn('call failed:', err);
+        alert('Call failed: ' + err.message);
+      }
+    });
   }
 
   // ---- Generate / Stop ------------------------------------------------
@@ -394,6 +422,24 @@
         window.zoetropeTransfer.renderInboundNotification(host, ev);
       } catch (err) { console.error(err); }
     });
+    for (const verb of ['audio-offer', 'audio-answer', 'audio-ice', 'audio-bye']) {
+      es.addEventListener('session-' + verb, e => {
+        try {
+          const ev = JSON.parse(e.data);
+          const payload = ev.payload || {};
+          const label = state.sessions.get(ev.fingerprint)?.snap?.label
+            || state.sessions.get(ev.fingerprint)?.node.querySelector('.session-label').textContent
+            || (ev.fingerprint || '').slice(0, 12);
+          // On incoming offer to an idle practitioner, flip to MI so the
+          // call surface is visible. Other verbs land in whatever view
+          // the practitioner is already in.
+          if (verb === 'audio-offer' && window.zoetropeAudio.getState().state === 'idle') {
+            setView('mi');
+          }
+          window.zoetropeAudio.handleSignal(payload, ev.fingerprint, label);
+        } catch (err) { console.error(err); }
+      });
+    }
   }
 
   // ---- Heartbeat ------------------------------------------------------
@@ -418,6 +464,56 @@
     onSaveCloseEditor: () => {},
     onConfirm: confirmAction,
   });
+
+  // ---- Audio (shared module from audio.js) --------------------------
+  window.zoetropeAudio.init({
+    sendVerb: (verb, peerFP) => {
+      if (!peerFP) return; // manager always knows its target
+      sendSessionVerb(peerFP, verb);
+    },
+    onStateChange: renderAudioCard,
+  });
+
+  function renderAudioCard(snap) {
+    const card = document.getElementById('audio-card');
+    if (!card) return;
+    // Show the card whenever we're in manager mode; hide otherwise. The
+    // card itself swaps its internal sections by state.
+    card.hidden = (state.nmode !== 'manager');
+    const pill = document.getElementById('audio-state-pill');
+    pill.textContent = snap.state;
+    pill.dataset.state = snap.state;
+    const showIdle = (snap.state === 'idle' || snap.state === 'outgoing-ringing');
+    const showIncoming = (snap.state === 'incoming-ringing');
+    const showActive = (snap.state === 'connecting' || snap.state === 'connected');
+    document.getElementById('audio-idle-hint').hidden = !showIdle;
+    document.getElementById('audio-idle-hint').textContent = (snap.state === 'outgoing-ringing')
+      ? 'Calling ' + (snap.peerLabel || 'peer') + '…'
+      : 'No active call. Use 📞 on a session card to start one.';
+    document.getElementById('audio-incoming').hidden = !showIncoming;
+    document.getElementById('audio-active').hidden = !showActive;
+    if (showIncoming) {
+      document.getElementById('audio-incoming-label').textContent = snap.peerLabel || 'unknown peer';
+    }
+    if (showActive) {
+      document.getElementById('audio-active-label').textContent = snap.peerLabel || 'peer';
+      document.getElementById('audio-mic-mute').textContent = snap.micMuted ? '🎤 Muted' : '🎤 Mute';
+      document.getElementById('audio-mic-mute').classList.toggle('active', snap.micMuted);
+      document.getElementById('audio-volume').value = Math.round(snap.speakerVolume * 100);
+    }
+  }
+  document.getElementById('audio-accept').addEventListener('click', () => window.zoetropeAudio.acceptCall());
+  document.getElementById('audio-decline').addEventListener('click', () => window.zoetropeAudio.declineCall());
+  document.getElementById('audio-hangup').addEventListener('click', () => window.zoetropeAudio.hangup());
+  document.getElementById('audio-mic-mute').addEventListener('click', () => {
+    const cur = window.zoetropeAudio.getState();
+    window.zoetropeAudio.setMicMuted(!cur.micMuted);
+  });
+  document.getElementById('audio-volume').addEventListener('input', e => {
+    window.zoetropeAudio.setSpeakerVolume((+e.target.value) / 100);
+  });
+  // Initial render so the card shows the idle hint as soon as manager mode lights up.
+  renderAudioCard(window.zoetropeAudio.getState());
 
   // ---- Init -----------------------------------------------------------
 

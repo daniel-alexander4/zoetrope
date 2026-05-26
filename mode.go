@@ -724,6 +724,15 @@ func (m *modeState) managerReadLoop(ctx context.Context, sess *session, conn *we
 				"fingerprint": sess.certFP,
 				"payload":     json.RawMessage(raw),
 			})
+		case "audio-offer", "audio-answer", "audio-ice", "audio-bye":
+			// Voice-call signaling: the browsers own RTCPeerConnection
+			// lifecycle and the SDP/ICE state machine. We just route the
+			// frame through to /manage's SSE bus tagged with the source fp
+			// so audio.js knows which session is speaking.
+			m.bus.Publish("session-"+hdr.Type, map[string]any{
+				"fingerprint": sess.certFP,
+				"payload":     json.RawMessage(raw),
+			})
 		case "file-offer", "file-chunk", "file-cancel":
 			m.handleInboundTransferFrame(hdr.Type, raw, sess.certFP, sess, conn, "from-session")
 		default:

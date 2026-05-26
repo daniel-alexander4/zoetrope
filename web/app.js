@@ -897,6 +897,12 @@
       enterItem(0);
       state.sessionConfigBackup = null;
     }
+    // Leaving client mode → hang up any in-flight call so we don't keep
+    // the mic open or leak a live peer connection.
+    if (prev === 'client' && state.nmode !== 'client'
+        && window.zoetropeAudio && window.zoetropeAudio.getState().state !== 'idle') {
+      window.zoetropeAudio.hangup();
+    }
   }
 
   function setClientPill(status) {
@@ -1011,6 +1017,67 @@
     }
   });
 
+  // ---- Voice call (bidirectional) -------------------------------------
+  //
+  // audio.js owns the RTCPeerConnection lifecycle. We give it a sendVerb
+  // that posts to /api/network/send (manager is the only peer in client
+  // mode, so peerFP is ignored) and a state-change callback that renders
+  // the controls block under #client-status.
+  window.zoetropeAudio.init({
+    sendVerb: (verb /*, peerFP — unused, manager is the only peer */) => {
+      csrfFetch('/api/network/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(verb),
+      }).catch(err => console.warn('audio send:', err));
+    },
+    onStateChange: renderClientAudio,
+  });
+
+  function renderClientAudio(snap) {
+    const wrap = document.getElementById('client-audio');
+    const incoming = document.getElementById('client-audio-incoming');
+    const active = document.getElementById('client-audio-active');
+    const stateEl = document.getElementById('client-audio-state');
+    const micBtn = document.getElementById('client-audio-mic');
+    const vol = document.getElementById('client-audio-volume');
+    wrap.hidden = (snap.state === 'idle');
+    incoming.hidden = (snap.state !== 'incoming-ringing');
+    active.hidden = !(snap.state === 'outgoing-ringing' || snap.state === 'connecting' || snap.state === 'connected');
+    if (!active.hidden) {
+      stateEl.textContent = ({
+        'outgoing-ringing': 'Calling…',
+        'connecting':       'Connecting…',
+        'connected':        'Connected',
+      }[snap.state]) || snap.state;
+      micBtn.textContent = snap.micMuted ? '🎤 Muted' : '🎤 Mute';
+      micBtn.classList.toggle('active', snap.micMuted);
+      vol.value = Math.round(snap.speakerVolume * 100);
+    }
+  }
+  renderClientAudio(window.zoetropeAudio.getState());
+
+  document.getElementById('btn-client-call').addEventListener('click', async () => {
+    const cur = window.zoetropeAudio.getState();
+    if (cur.state !== 'idle') return; // ignore double-clicks
+    try {
+      await window.zoetropeAudio.startCall(null, 'practitioner');
+    } catch (err) {
+      console.warn('call failed:', err);
+      alert('Call failed: ' + err.message);
+    }
+  });
+  document.getElementById('client-audio-accept').addEventListener('click', () => window.zoetropeAudio.acceptCall());
+  document.getElementById('client-audio-decline').addEventListener('click', () => window.zoetropeAudio.declineCall());
+  document.getElementById('client-audio-hangup').addEventListener('click', () => window.zoetropeAudio.hangup());
+  document.getElementById('client-audio-mic').addEventListener('click', () => {
+    const cur = window.zoetropeAudio.getState();
+    window.zoetropeAudio.setMicMuted(!cur.micMuted);
+  });
+  document.getElementById('client-audio-volume').addEventListener('input', e => {
+    window.zoetropeAudio.setSpeakerVolume((+e.target.value) / 100);
+  });
+
   // ---- Pill clicks ----------------------------------------------------
 
   document.querySelectorAll('.mpill').forEach(p => {
@@ -1084,7 +1151,15 @@
     es.addEventListener('network-verb', e => {
       try {
         const ev = JSON.parse(e.data);
-        if (ev.frame) dispatch(ev.frame);
+        if (!ev.frame) return;
+        // Audio signaling is owned by audio.js — don't run it through the
+        // transport dispatch (which would log "unknown verb").
+        if (ev.frame.type === 'audio-offer' || ev.frame.type === 'audio-answer'
+            || ev.frame.type === 'audio-ice' || ev.frame.type === 'audio-bye') {
+          window.zoetropeAudio.handleSignal(ev.frame, null, 'practitioner');
+          return;
+        }
+        dispatch(ev.frame);
       } catch (err) { console.error(err); }
     });
     es.addEventListener('network-disconnected', () => {

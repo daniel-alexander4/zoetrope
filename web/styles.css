@@ -720,6 +720,165 @@ body.mode-field .balls-only { display: none !important; }
   margin-left: auto;
 }
 
+/* ---- Voice call --------------------------------------------------- */
+
+.session-call {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.session-call:hover { background: var(--overlay); }
+
+#audio-card[hidden] { display: none; }
+#audio-card .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.audio-state-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--overlay);
+  color: var(--subtext);
+}
+.audio-state-pill[data-state="connected"] {
+  background: color-mix(in oklab, #a6e3a1 30%, transparent);
+  color: #a6e3a1;
+}
+.audio-state-pill[data-state="outgoing-ringing"],
+.audio-state-pill[data-state="incoming-ringing"],
+.audio-state-pill[data-state="connecting"] {
+  background: color-mix(in oklab, var(--accent) 30%, transparent);
+  color: var(--accent);
+}
+.audio-incoming, .audio-active {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0;
+}
+.audio-incoming p, .audio-active p { margin: 0; font-size: 13px; }
+.audio-incoming-actions {
+  display: flex;
+  gap: 8px;
+}
+.audio-incoming-actions button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 0;
+}
+.audio-incoming-actions button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--overlay);
+}
+.audio-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.audio-controls button {
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.audio-controls button.active {
+  background: var(--danger);
+  color: var(--base);
+  border-color: var(--danger);
+}
+button.danger,
+.audio-controls button.danger {
+  background: var(--danger);
+  color: var(--base);
+  border: 0;
+}
+button.danger:hover { filter: brightness(1.08); }
+.audio-vol {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--subtext);
+}
+.audio-vol input[type="range"] { width: 100px; }
+
+/* Client-side audio surface (sits under #client-status). Visible only
+   when audio.js reports a non-idle state — JS toggles the [hidden]
+   attribute. */
+#client-audio {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 320px;
+  z-index: 50;
+  background: rgba(17, 17, 27, 0.92);
+  border: 1px solid var(--overlay);
+  border-radius: 8px;
+  padding: 10px 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+#client-audio[hidden] { display: none; }
+#client-audio-incoming, #client-audio-active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+#client-audio-incoming[hidden], #client-audio-active[hidden] { display: none; }
+#client-audio-incoming span, #client-audio-state {
+  font-size: 13px;
+  color: var(--text);
+}
+#client-audio button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#client-audio button:hover { background: var(--overlay); }
+#client-audio button.active {
+  background: var(--danger);
+  color: var(--base);
+  border-color: var(--danger);
+}
+#client-audio button.primary-cta {
+  background: var(--accent);
+  color: var(--base);
+  border-color: var(--accent);
+}
+#client-audio button.ghost {
+  background: transparent;
+}
+
+#btn-client-call {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#btn-client-call:hover { background: var(--overlay); }
+
 /* ---- Network modes -------------------------------------------------- */
 
 #client-status { display: none; }
