@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"sync/atomic"
@@ -108,9 +109,20 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 	})
 	mux.HandleFunc("POST /api/mode/host", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
 		var req hostRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
 			return
+		}
+		// Enter MI from Landing posts an empty body — no endpoint yet,
+		// no client URL to mint. Detect the public IP here so manager
+		// mode can engage without the frontend having to know our IP.
+		if req.Endpoint == "" {
+			ip, err := detectPublicIP(r.Context())
+			if err != nil {
+				http.Error(w, "detect public IP: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			req.Endpoint = net.JoinHostPort(ip, managerHardcodedPort)
 		}
 		if err := modes.Host(req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

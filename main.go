@@ -48,18 +48,18 @@ func main() {
 
 	// Prefer a stable port so a stale browser tab still points at the
 	// live server after a restart. Before binding, ask any prior zoetrope
-	// holding the port to exit — keeps a fresh launch on the canonical
-	// port even when the previous binary outlived its browser tab. If
-	// kill-prior fails or the port is taken by something else entirely,
-	// fall back to a random free port so we still come up.
-	const preferredPort = "38129"
+	// to exit — keeps a fresh launch on the canonical ports even when
+	// the previous binary outlived its browser tab. Wait for both the
+	// HTTP port (38129) and the manager mTLS port (38130) to free so a
+	// subsequent Hosting click doesn't race against the old binary's
+	// listener teardown. If a non-zoetrope process is camping on 38129
+	// we fall back to a random free port so we still come up.
+	const httpAddr = "127.0.0.1:38129"
 	pidPath, _ := pidFilePath(appName)
-	if pidPath != "" {
-		killPriorInstance(pidPath, "127.0.0.1:"+preferredPort)
-	}
-	ln, err := net.Listen("tcp", "127.0.0.1:"+preferredPort)
+	killPriorInstances(pidPath, httpAddr, managerListenAddr)
+	ln, err := net.Listen("tcp", httpAddr)
 	if err != nil {
-		log.Printf("port %s unavailable (%v); using random free port", preferredPort, err)
+		log.Printf("%s unavailable (%v); using random free port", httpAddr, err)
 		ln, err = net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			log.Fatalf("listen: %v", err)
@@ -154,59 +154,100 @@ func writePidFile(path string) error {
 	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o644)
 }
 
-// killPriorInstance reads the PID file; if it points at a live zoetrope
-// process, SIGTERM it and wait up to ~5s for the port to free. Best-
-// effort — silently no-ops if the file is missing, stale, points at an
-// unrelated process, or the OS doesn't let us check identity.
-func killPriorInstance(pidPath, addr string) {
+// killPriorInstances finds every running zoetrope process other than
+// ourselves and asks it to exit, then waits up to ~5s for the given
+// addrs to free. On Linux we walk /proc/*/comm so we catch prior
+// binaries that didn't write a pid file (e.g. pre-singleton versions
+// surviving a deb upgrade). On macOS/Windows we fall back to the pid
+// file — best-effort; SIGTERM to a reused PID is rare and recoverable.
+func killPriorInstances(pidPath string, waitAddrs ...string) {
+	pids := findPriorPIDs(pidPath)
+	if len(pids) == 0 {
+		return
+	}
+	for _, pid := range pids {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			continue
+		}
+		log.Printf("killing prior zoetrope (pid %d)", pid)
+		_ = proc.Signal(syscall.SIGTERM)
+	}
+	waitPortsFree(5*time.Second, waitAddrs...)
+}
+
+func findPriorPIDs(pidPath string) []int {
+	self := os.Getpid()
+	if runtime.GOOS == "linux" {
+		return scanProcForZoetrope(self)
+	}
+	// Non-Linux: trust the pid file (no cheap cross-platform comm read).
+	if pidPath == "" {
+		return nil
+	}
 	data, err := os.ReadFile(pidPath)
 	if err != nil {
-		return // no file (first run or already cleaned)
+		return nil
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid <= 0 || pid == os.Getpid() {
-		return
+	if err != nil || pid <= 0 || pid == self {
+		return nil
 	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		return
+		return nil
 	}
-	// Signal(0) is a liveness probe on Unix; on Windows os.FindProcess
-	// errors if the PID isn't valid, so reaching here implies the
-	// process exists.
 	if runtime.GOOS != "windows" {
 		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			return // dead — stale pid file
+			return nil // stale pid file
 		}
 	}
-	if !pidLooksLikeZoetrope(pid) {
-		return // PID has been reused by an unrelated process
-	}
-	log.Printf("killing prior zoetrope instance (pid %d) to reclaim %s", pid, addr)
-	_ = proc.Signal(syscall.SIGTERM)
-	// Poll the port — return as soon as it frees. ~5s ceiling.
-	for i := 0; i < 25; i++ {
-		time.Sleep(200 * time.Millisecond)
-		l, err := net.Listen("tcp", addr)
-		if err == nil {
-			l.Close()
-			return
-		}
-	}
+	return []int{pid}
 }
 
-// pidLooksLikeZoetrope verifies the PID belongs to a zoetrope process so
-// a stale pid file pointing at a reused PID doesn't make us SIGTERM an
-// unrelated program. Linux uses /proc/<pid>/comm; other OSes trust the
-// pid file because cross-platform process introspection is messy and
-// the worst case (SIGTERM to a reused PID) is rare and recoverable.
-func pidLooksLikeZoetrope(pid int) bool {
-	if runtime.GOOS != "linux" {
-		return true
-	}
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+// scanProcForZoetrope returns every PID whose /proc/<pid>/comm field is
+// exactly "zoetrope", excluding self. comm is truncated to 15 chars by
+// the kernel (TASK_COMM_LEN-1); "zoetrope" fits, so an exact match is
+// safe.
+func scanProcForZoetrope(self int) []int {
+	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return false
+		return nil
 	}
-	return strings.TrimSpace(string(data)) == appName
+	var pids []int
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid <= 0 || pid == self {
+			continue
+		}
+		data, err := os.ReadFile("/proc/" + e.Name() + "/comm")
+		if err != nil {
+			continue // process may have exited between ReadDir and now
+		}
+		if strings.TrimSpace(string(data)) == appName {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// waitPortsFree polls each addr until net.Listen succeeds, sharing one
+// budget across all addrs. The manager-mode mTLS listener (:38130) lags
+// the SIGTERM by ~1s while modes.Standalone() unwinds — without this we
+// can race the prior binary and fail a later modes.Host() bind.
+func waitPortsFree(budget time.Duration, addrs ...string) {
+	deadline := time.Now().Add(budget)
+	for _, addr := range addrs {
+		for time.Now().Before(deadline) {
+			l, err := net.Listen("tcp", addr)
+			if err == nil {
+				l.Close()
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 }

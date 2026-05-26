@@ -79,7 +79,6 @@
     const editor = document.getElementById('editor-section');
     const sessions = document.getElementById('sessions');
     const stopBtn = document.getElementById('btn-stop-hosting');
-    const enterMiBtn = document.getElementById('btn-enter-mi');
 
     // landing-card is always present in the DOM; the view-class on body
     // is what hides it in MI view. Sessions card is landing-only (CSS),
@@ -92,8 +91,6 @@
       editor.hidden = false;
       sessions.hidden = false;
       stopBtn.hidden = false;
-      enterMiBtn.disabled = false;
-      enterMiBtn.title = 'Open the Management Interface';
       const audioCard = document.getElementById('audio-card');
       if (audioCard) audioCard.hidden = false;
       document.getElementById('practitioner-fp').dataset.full = snap.practitioner_fp || '';
@@ -114,8 +111,6 @@
       editor.hidden = true;
       sessions.hidden = true;
       stopBtn.hidden = true;
-      enterMiBtn.disabled = true;
-      enterMiBtn.title = 'Generate a connection string first to engage hosting';
       const audioCard = document.getElementById('audio-card');
       if (audioCard) audioCard.hidden = true;
       // Leaving manager → hang up any in-flight call so we don't hold the
@@ -333,9 +328,36 @@
   document.getElementById('btn-new-session').addEventListener('click', e => {
     generateConnectionString(e.currentTarget, null);
   });
-  document.getElementById('btn-enter-mi').addEventListener('click', () => {
-    if (state.nmode !== 'manager') return; // disabled gates this; defense in depth
-    setView('mi');
+  document.getElementById('btn-enter-mi').addEventListener('click', async e => {
+    if (state.nmode === 'manager') {
+      setView('mi');
+      return;
+    }
+    // Standalone → engage manager mode first, then pivot. Pre-set
+    // initialModeApplied so applyMode's first-paint heuristic doesn't
+    // overwrite our explicit setView('mi') with its session-count pick.
+    const btn = e.currentTarget;
+    const errEl = document.getElementById('start-error');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Engaging hosting…';
+    errEl.textContent = '';
+    state.initialModeApplied = true;
+    try {
+      const r = await csrfFetch('/api/mode/host', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (!r.ok) throw new Error((await r.text()).trim() || 'host failed');
+      setView('mi');
+    } catch (err) {
+      state.initialModeApplied = false;
+      errEl.textContent = err.message || String(err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
   });
   document.getElementById('btn-show-gcs').addEventListener('click', () => {
     setView('landing');
