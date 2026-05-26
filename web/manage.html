@@ -14,7 +14,6 @@
       <div class="brand-name">Zoetrope</div>
       <span class="page-label">Hosting session</span>
     </div>
-    <button id="btn-back-landing" class="mi-only" hidden title="Return to the landing card">← Landing</button>
     <button id="btn-stop-hosting" hidden title="Tear down the listener and return to standalone">Stop hosting</button>
     <a class="back-link" href="/">← Ball view</a>
   </header>
@@ -43,10 +42,11 @@
       <div id="start-error" class="start-error"></div>
     </section>
 
-    <!-- Sessions card: visible in both views. On Landing it surfaces the
-         minted URLs for copying; on MI it adds the per-session transport
-         controls and inbox. -->
-    <section id="sessions" class="card" hidden>
+    <!-- Sessions card: Landing-only. Surfaces the minted URLs and the
+         per-session transport / send-file controls. The MI is reserved
+         for playlist work; "Go to GCS" in the MI HUD brings the user
+         here when they need to manage URLs. -->
+    <section id="sessions" class="card landing-only" hidden>
       <header>
         <h3>Sessions</h3>
         <button id="btn-new-session" title="Mint another connection string for a new client">+ Generate connection string</button>
@@ -54,11 +54,79 @@
       <ol id="sessions-list"></ol>
     </section>
 
-    <!-- MI-only card grid: identity + editor + (future) audio / file
-         transfer / other panels. Static positions in A1; A2 lands the HUD
-         + modality pills; a later push makes them draggable. -->
+    <!-- MI-only card grid: Library picker (left) + Active playlist editor
+         (right). Identity sits below behind the Info button in the HUD —
+         body.show-info reveals it; otherwise it stays hidden. Future
+         audio / file-transfer / other panels join as additional cards. -->
     <div class="card-grid mi-only">
-      <section id="identity-panel" class="card" hidden data-collapsed="true">
+      <section id="library-card" class="card" hidden>
+        <header class="section-header">
+          <h3>Library</h3>
+        </header>
+        <p class="section-hint">Pick the playlist that plays. Create, rename, duplicate, or delete from here.</p>
+        <div class="library-row">
+          <select id="playlist-picker" title="Active playlist (the one pushed to clients on connect or active-session switch)"></select>
+        </div>
+        <div class="library-buttons">
+          <button id="lib-new" type="button" class="regen" title="New playlist">+ New</button>
+          <button id="lib-rename" type="button" class="regen" title="Rename / recategorize">Rename</button>
+          <button id="lib-dup" type="button" class="regen" title="Duplicate">Duplicate</button>
+          <button id="lib-del" type="button" class="regen" title="Delete playlist">Delete</button>
+        </div>
+        <div id="library-edit" class="library-edit hidden">
+          <input type="text" id="lib-name" placeholder="Playlist name">
+          <label>Category
+            <select id="lib-category"></select>
+          </label>
+          <div class="library-edit-actions">
+            <button id="lib-ok" type="button" class="regen">OK</button>
+            <button id="lib-cancel" type="button" class="regen">Cancel</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="editor-section" class="card" hidden>
+        <header class="section-header">
+          <h3>Active playlist</h3>
+          <select id="add-pattern" title="Add pattern">
+            <option value="" disabled selected>+ Add…</option>
+          </select>
+        </header>
+        <p class="section-hint">
+          Edit while you wait. The client receives this configuration when they connect; in-flight edits push live.
+        </p>
+        <div class="global">
+          <label>Background <input type="color" id="bg-color"></label>
+          <label>Ball size <input type="number" id="ball-size" min="2" max="400" step="1"></label>
+          <label>Speed <input type="number" id="speed-input" min="0" max="10" step="0.1"></label>
+        </div>
+        <div class="global linger-group">
+          <span class="group-label">Linger</span>
+          <label>Seconds <input type="number" id="linger-input" min="0" max="10" step="0.1"></label>
+          <label title="How far the size pulse leads into adjacent motion">
+            Lead frac <input type="number" id="linger-lead-input" min="0" max="1" step="0.05">
+          </label>
+        </div>
+        <div class="global" title="Label each gaze position on the canvas during position-sequence patterns. Off for live sessions; on while learning the grid.">
+          <label>
+            <input type="checkbox" id="show-position-labels"> Show position labels
+          </label>
+        </div>
+        <div class="global" title="Largest file this machine will send or accept over a session. 0 disables file transfer.">
+          <label>Max transfer size (MiB)
+            <input type="number" id="max-transfer-mib" min="0" max="4096" step="1">
+          </label>
+        </div>
+        <ol id="playlist"></ol>
+        <footer class="editor-footer">
+          <button id="btn-save">Save</button>
+          <button id="btn-revert">Revert</button>
+          <span id="save-status"></span>
+          <span class="safety-note">For use with a qualified practitioner. Not a treatment in itself.</span>
+        </footer>
+      </section>
+
+      <section id="identity-panel" class="card identity-card" hidden data-collapsed="true">
         <header class="identity-header">
           <h3>My identity</h3>
           <button id="identity-toggle" class="ghost-toggle" aria-expanded="false">Show full</button>
@@ -74,63 +142,17 @@
           <button class="copy-btn" data-copy="practitioner-ep" title="Copy address">Copy</button>
         </div>
       </section>
+    </div>
 
-      <section id="editor-section" class="card" hidden>
-      <header class="section-header">
-        <h3>Session playlist</h3>
-        <select id="add-pattern" title="Add pattern">
-          <option value="" disabled selected>+ Add…</option>
-        </select>
-      </header>
-      <p class="section-hint">
-        Edit while you wait. The client receives this configuration when they connect.
-      </p>
-      <div class="global">
-        <label>Background <input type="color" id="bg-color"></label>
-        <label>Ball size <input type="number" id="ball-size" min="2" max="400" step="1"></label>
-        <label>Speed <input type="number" id="speed-input" min="0" max="10" step="0.1"></label>
-      </div>
-      <div class="global linger-group">
-        <span class="group-label">Linger</span>
-        <label>Seconds <input type="number" id="linger-input" min="0" max="10" step="0.1"></label>
-        <label title="How far the size pulse leads into adjacent motion">
-          Lead frac <input type="number" id="linger-lead-input" min="0" max="1" step="0.05">
-        </label>
-      </div>
-      <div class="global" title="Label each gaze position on the canvas during position-sequence patterns. Off for live sessions; on while learning the grid.">
-        <label>
-          <input type="checkbox" id="show-position-labels"> Show position labels
-        </label>
-      </div>
-      <div class="global" title="Largest file this machine will send or accept over a session. 0 disables file transfer.">
-        <label>Max transfer size (MiB)
-          <input type="number" id="max-transfer-mib" min="0" max="4096" step="1">
-        </label>
-      </div>
-      <div class="global library-row">
-        <span class="group-label">Library</span>
-        <select id="playlist-picker" title="Active playlist (the one pushed to clients on connect or active-session switch)"></select>
-        <button id="lib-new" type="button" class="regen" title="New playlist">+</button>
-        <button id="lib-rename" type="button" class="regen" title="Rename / recategorize">✎</button>
-        <button id="lib-dup" type="button" class="regen" title="Duplicate">⎘</button>
-        <button id="lib-del" type="button" class="regen" title="Delete playlist">🗑</button>
-      </div>
-      <div id="library-edit" class="global library-edit hidden">
-        <input type="text" id="lib-name" placeholder="Playlist name">
-        <label>Category
-          <select id="lib-category"></select>
-        </label>
-        <button id="lib-ok" type="button" class="regen">OK</button>
-        <button id="lib-cancel" type="button" class="regen">Cancel</button>
-      </div>
-      <ol id="playlist"></ol>
-      <footer class="editor-footer">
-        <button id="btn-save">Save</button>
-        <button id="btn-revert">Revert</button>
-        <span id="save-status"></span>
-        <span class="safety-note">For use with a qualified practitioner. Not a treatment in itself.</span>
-      </footer>
-    </section>
+    <!-- MI HUD: bottom strip. A1 carries two buttons — Go to GCS (back to
+         Landing for URL minting / session management) and Info (toggles
+         the identity card). A2 will populate this with the connection
+         status pill, modality pill row, and modality-filtered playlist
+         picker. -->
+    <div id="mi-hud" class="mi-only">
+      <button id="btn-show-gcs" type="button" class="hud-btn" title="Go to the Generate Connection String page">⇤ GCS</button>
+      <span class="hud-spacer"></span>
+      <button id="btn-show-info" type="button" class="hud-btn" title="Show / hide identity details" aria-pressed="false">Info</button>
     </div>
 
     <template id="item-template">

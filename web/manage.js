@@ -46,14 +46,19 @@
   // ---- Page state -----------------------------------------------------
 
   // setView toggles the in-page surface (Landing vs MI) by swapping body
-  // classes. CSS does the show/hide; no DOM rebuild, no fetch. setView is
-  // idempotent — calling it with the current view is a no-op.
+  // classes. CSS does the show/hide; no DOM rebuild, no fetch. Idempotent —
+  // calling it with the current view is a no-op. Leaving MI also clears
+  // body.show-info so the identity card doesn't surprise the user on
+  // their next MI visit.
   function setView(view) {
     state.view = view;
     document.body.classList.remove('view-landing', 'view-mi');
     document.body.classList.add('view-' + view);
-    const back = document.getElementById('btn-back-landing');
-    if (back) back.hidden = (view !== 'mi');
+    if (view !== 'mi') {
+      document.body.classList.remove('show-info');
+      const info = document.getElementById('btn-show-info');
+      if (info) info.setAttribute('aria-pressed', 'false');
+    }
   }
 
   function applyMode(snap) {
@@ -70,19 +75,20 @@
     }
 
     const landing = document.getElementById('landing-card');
-    const identity = document.getElementById('identity-panel');
+    const library = document.getElementById('library-card');
     const editor = document.getElementById('editor-section');
     const sessions = document.getElementById('sessions');
     const stopBtn = document.getElementById('btn-stop-hosting');
     const enterMiBtn = document.getElementById('btn-enter-mi');
 
     // landing-card is always present in the DOM; the view-class on body
-    // is what hides it in MI view. Same with sessions (visible in both
-    // views once at least one URL has been minted).
+    // is what hides it in MI view. Sessions card is landing-only (CSS),
+    // so we only manage its hidden attribute for "has any URL been
+    // minted yet" — landing hides it visually until the first session.
     landing.hidden = false;
 
     if (mode === 'manager') {
-      identity.hidden = false;
+      library.hidden = false;
       editor.hidden = false;
       sessions.hidden = false;
       stopBtn.hidden = false;
@@ -102,7 +108,7 @@
         setView((snap.sessions && snap.sessions.length) ? 'mi' : 'landing');
       }
     } else { // standalone
-      identity.hidden = true;
+      library.hidden = true;
       editor.hidden = true;
       sessions.hidden = true;
       stopBtn.hidden = true;
@@ -303,8 +309,13 @@
     if (state.nmode !== 'manager') return; // disabled gates this; defense in depth
     setView('mi');
   });
-  document.getElementById('btn-back-landing').addEventListener('click', () => {
+  document.getElementById('btn-show-gcs').addEventListener('click', () => {
     setView('landing');
+  });
+  document.getElementById('btn-show-info').addEventListener('click', e => {
+    const on = !document.body.classList.contains('show-info');
+    document.body.classList.toggle('show-info', on);
+    e.currentTarget.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   document.getElementById('btn-stop-hosting').addEventListener('click', () => {
     confirmAction(

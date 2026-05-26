@@ -329,6 +329,66 @@ body.mode-field .balls-only { display: none !important; }
   display: none;
 }
 
+/* /manage Library card: a dedicated card containing only the playlist
+   picker + CRUD. Wider picker than the /-page sidebar version, buttons
+   in a tidy row beneath, edit form expands inline. */
+#library-card .library-row {
+  margin: 8px 0 12px;
+}
+#library-card #playlist-picker {
+  width: 100%;
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+#library-card .library-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#library-card .library-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--overlay);
+}
+#library-card .library-edit input[type="text"] {
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+#library-card .library-edit select {
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+#library-card .library-edit label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--subtext);
+}
+#library-card .library-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+#library-card .library-edit.hidden {
+  display: none;
+}
+
 #playlist {
   list-style: none;
   margin: 0;
@@ -906,12 +966,48 @@ body.view-mi .landing-only {
   min-height: 1em;
 }
 
-/* Back-to-landing button: ghost-styled, sits at the right end of the
-   topbar in MI view (pushed by margin-left:auto). When visible, it
-   takes the slot that #btn-stop-hosting normally claims, so suppress
-   that button's auto-margin while back-landing is on screen. */
-#manage-topbar #btn-back-landing {
-  margin-left: auto;
+/* MI card grid: Library (left) + Active playlist editor (right) at
+   wide widths, stacking on narrow. Library is the lighter card so it
+   gets the slimmer column; the editor needs the room for globals,
+   item rows, and footer. Identity (when toggled via Info) lives below
+   spanning the full row. Future panels (audio, file transfer, etc.)
+   join the grid the same way. */
+.card-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+  margin-bottom: 80px; /* clear space for the sticky #mi-hud below */
+}
+@media (min-width: 880px) {
+  .card-grid {
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
+  }
+}
+body.view-mi.show-info #identity-panel {
+  grid-column: 1 / -1;
+}
+
+/* MI HUD: sticky strip at the bottom of the MI view. A1 carries the
+   "Go to GCS" and "Info" buttons; A2 will populate it with the
+   connection-status pill, modality pills, and the modality-filtered
+   playlist picker. The .mi-only class hides it in Landing view. */
+#mi-hud {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  background: var(--surface);
+  border-top: 1px solid var(--overlay);
+}
+#mi-hud .hud-spacer {
+  flex: 1;
+}
+.hud-btn {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--overlay);
@@ -920,34 +1016,13 @@ body.view-mi .landing-only {
   font-size: 13px;
   cursor: pointer;
 }
-#manage-topbar #btn-back-landing:hover {
+.hud-btn:hover {
   background: var(--overlay);
 }
-#manage-topbar #btn-back-landing[hidden] {
-  display: none;
-}
-body.view-mi #manage-topbar #btn-back-landing ~ #btn-stop-hosting {
-  margin-left: 0;
-}
-
-/* MI card grid: identity + editor + (future) audio / file transfer /
-   other panels. Single column at narrow widths, two columns once
-   there's room. Cards keep their internal layout; the grid only
-   arranges them. */
-.card-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
-}
-@media (min-width: 880px) {
-  .card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  /* Editor is the densest card — let it span both columns so the
-     playlist list isn't squeezed into half-width on a typical laptop. */
-  .card-grid #editor-section {
-    grid-column: 1 / -1;
-  }
+.hud-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--base);
+  border-color: var(--accent);
 }
 
 /* .card primitive — shared surface for every card on /manage. The
@@ -961,7 +1036,11 @@ body.view-mi #manage-topbar #btn-back-landing ~ #btn-stop-hosting {
   padding: 16px;
 }
 
-#identity-panel[hidden] { display: none; }
+/* Identity card: hidden by default in MI; the HUD Info button toggles
+   body.show-info to reveal it. Landing-view hiding is already handled
+   by the .mi-only rule on .card-grid. */
+#identity-panel { display: none; }
+body.view-mi.show-info #identity-panel { display: block; }
 .copy-btn {
   background: var(--surface);
   color: var(--text);
