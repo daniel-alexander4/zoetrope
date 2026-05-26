@@ -315,18 +315,42 @@
       if (Number.isInteger(idx)) sendSessionVerb(fp, { type: 'set-sequence', index: idx });
       e.target.value = '';
     });
+    const inboxHost = node.querySelector('.session-inbox');
+    const uploadURL = '/api/sessions/' + fp + '/transfer';
+    async function sendFileForSession(file) {
+      try {
+        const res = await window.zoetropeTransfer.sendFile(uploadURL, file);
+        if (res && res.transfer_id) {
+          window.zoetropeTransfer.beginOutbound(inboxHost, {
+            id: res.transfer_id,
+            name: res.name || file.name,
+            sizeBytes: res.size_bytes ?? file.size,
+          });
+        }
+      } catch (err) {
+        console.warn('send failed:', err);
+        alert('Send failed: ' + err.message);
+      }
+    }
     const attachBtn = node.querySelector('.session-attach');
     attachBtn.addEventListener('click', async () => {
       attachBtn.disabled = true;
       try {
-        await window.zoetropeTransfer.pickAndSend('/api/sessions/' + fp + '/transfer');
-      } catch (err) {
-        console.warn('attach failed:', err);
-        alert('Send failed: ' + err.message);
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.style.display = 'none';
+        input.addEventListener('change', async () => {
+          const file = input.files && input.files[0];
+          input.remove();
+          if (file) await sendFileForSession(file);
+        }, { once: true });
+        document.body.appendChild(input);
+        input.click();
       } finally {
         attachBtn.disabled = false;
       }
     });
+    window.zoetropeTransfer.attachDropTarget(node, sendFileForSession);
     const callBtn = node.querySelector('.session-call');
     callBtn.addEventListener('click', async () => {
       const audio = window.zoetropeAudio;
@@ -497,6 +521,15 @@
         }
       } catch (err) { console.error(err); }
     });
+    // Sender-side lifecycle: route through zoetropeTransfer so the
+    // matching outbound progress card updates. Unknown ids are ignored
+    // inside handleLifecycle.
+    for (const kind of ['progress', 'accepted', 'completed', 'failed']) {
+      es.addEventListener('transfer-' + kind, e => {
+        try { window.zoetropeTransfer.handleLifecycle(kind, JSON.parse(e.data)); }
+        catch (err) { console.error(err); }
+      });
+    }
     for (const verb of ['audio-offer', 'audio-answer', 'audio-ice', 'audio-bye']) {
       es.addEventListener('session-' + verb, e => {
         try {
@@ -674,6 +707,9 @@
       const view = await r.json();
       state.clientID = id;
       setView('client');
+      // The section ships with [hidden] so it doesn't flash before any
+      // client is loaded — clear it now that we have data to render.
+      document.getElementById('client-detail').hidden = false;
       document.getElementById('client-detail-name').textContent = view.name;
       document.getElementById('client-notes').value = view.notes || '';
       document.getElementById('client-generated-url').hidden = true;
@@ -885,12 +921,12 @@
     const input = document.getElementById('files-send-input');
     const btn = document.getElementById('files-send-btn');
     const status = document.getElementById('files-send-status');
-    if (!sel || !input || !btn || !status) return;
+    const card = document.getElementById('files-card');
+    if (!sel || !input || !btn || !status || !card) return;
     sel.addEventListener('change', () => refreshFilesInbox(sel.value));
     input.addEventListener('change', updateFilesSendState);
-    btn.addEventListener('click', async () => {
+    async function sendFromFilesCard(file) {
       const clientID = sel.value;
-      const file = input.files && input.files[0];
       if (!clientID || !file) return;
       const fp = findLiveSessionForClient(clientID);
       if (!fp) {
@@ -899,20 +935,17 @@
         return;
       }
       status.classList.remove('error');
-      status.textContent = 'Sending ' + file.name + '…';
+      status.textContent = '';
       btn.disabled = true;
       try {
-        const r = await fetch('/api/sessions/' + encodeURIComponent(fp) + '/transfer', {
-          method: 'POST',
-          headers: {
-            'X-Zoetrope': '1',
-            'X-Transfer-Filename': encodeURIComponent(file.name || 'untitled'),
-            'X-Transfer-Mime': file.type || 'application/octet-stream',
-          },
-          body: file,
-        });
-        if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
-        status.textContent = 'Sent.';
+        const res = await window.zoetropeTransfer.sendFile('/api/sessions/' + encodeURIComponent(fp) + '/transfer', file);
+        if (res && res.transfer_id) {
+          window.zoetropeTransfer.beginOutbound(card, {
+            id: res.transfer_id,
+            name: res.name || file.name,
+            sizeBytes: res.size_bytes ?? file.size,
+          });
+        }
         input.value = '';
       } catch (err) {
         status.classList.add('error');
@@ -920,7 +953,12 @@
       } finally {
         updateFilesSendState();
       }
+    }
+    btn.addEventListener('click', () => {
+      const file = input.files && input.files[0];
+      if (file) sendFromFilesCard(file);
     });
+    window.zoetropeTransfer.attachDropTarget(card, sendFromFilesCard);
   }
 
   // ---- MI card drag-to-reorder --------------------------------------

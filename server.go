@@ -213,8 +213,9 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 	// Inbox: receiver browser GETs to save/open; DELETEs to dismiss.
 
 	mux.HandleFunc("POST /api/sessions/{fp}/transfer", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
-		handleOutboundTransfer(w, r, store, func(name, mime string, data []byte) (string, error) {
-			return modes.SendFileToSession(r.PathValue("fp"), name, mime, data)
+		fp := r.PathValue("fp")
+		handleOutboundTransfer(w, r, store, func(id, name, mime string, data []byte) error {
+			return modes.SendFileToSession(fp, id, name, mime, data)
 		})
 	}))
 	mux.HandleFunc("POST /api/network/transfer", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
@@ -379,9 +380,11 @@ func readOptionalClientID(r *http.Request) string {
 }
 
 // handleOutboundTransfer reads a raw file body up to the local MaxTransferBytes
-// cap, then hands it to the mode-specific sender (session-bound on the
-// manager side, manager-bound on the client side).
-func handleOutboundTransfer(w http.ResponseWriter, r *http.Request, store *configStore, send func(name, mime string, data []byte) (string, error)) {
+// cap, generates a transfer_id, and returns 202 + the id immediately —
+// the actual chunk-stream runs in a goroutine so the sender's browser
+// can subscribe to transfer-progress / -accepted / -completed / -failed
+// lifecycle events on that id from the moment the POST returns.
+func handleOutboundTransfer(w http.ResponseWriter, r *http.Request, store *configStore, send func(id, name, mime string, data []byte) error) {
 	cap := store.Get().MaxTransferBytes
 	if cap <= 0 {
 		http.Error(w, "file transfer disabled (maxTransferBytes is 0)", http.StatusForbidden)
@@ -403,12 +406,14 @@ func handleOutboundTransfer(w http.ResponseWriter, r *http.Request, store *confi
 	if mime == "" {
 		mime = "application/octet-stream"
 	}
-	id, err := send(name, mime, data)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	id := newTransferID()
+	go func() {
+		if err := send(id, name, mime, data); err != nil {
+			log.Printf("transfer %s: %v", id, err)
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"transfer_id": id,
 		"name":        name,

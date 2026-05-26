@@ -96,6 +96,33 @@ type fileCancelFrame struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+// fileAcceptFrame is the receiver-to-sender ack after a successful
+// startInbound. Sender uses it to flip the progress card from
+// "Sending…" to "Accepted, sending…" — purely informational; the
+// sender keeps writing chunks regardless.
+type fileAcceptFrame struct {
+	TransferID string `json:"transfer_id"`
+}
+
+// transferProgressEvent is published on the SENDER side after each
+// chunk write so the local browser can render a progress bar. Bus is
+// per-process so this only reaches the sending machine's UI.
+type transferProgressEvent struct {
+	TransferID  string `json:"transfer_id"`
+	Name        string `json:"name,omitempty"`
+	ChunksDone  int    `json:"chunks_done"`
+	ChunksTotal int    `json:"chunks_total"`
+	SizeBytes   int64  `json:"size_bytes"`
+}
+
+// transferLifecycleEvent is the shape for accepted / completed /
+// failed events on the sender side. `reason` is populated on failed.
+type transferLifecycleEvent struct {
+	TransferID string `json:"transfer_id"`
+	Name       string `json:"name,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
 // fileReceivedEvent is the SSE payload published when a transfer completes.
 // `direction` is "from-session" when the manager received from a session,
 // "from-manager" when the client received from the manager. Browsers route
@@ -330,52 +357,73 @@ func (m *modeState) sweepTransfers() {
 // ---- Outbound: chunk-and-send -------------------------------------------
 
 // SendFileToSession is the manager-side outbound path: write a file-offer
-// followed by file-chunk frames to the given session's WS.
-func (m *modeState) SendFileToSession(fp, name, mime string, data []byte) (string, error) {
+// followed by file-chunk frames to the given session's WS. id is the
+// pre-generated transfer ID (the HTTP handler hands it to the caller
+// synchronously before spawning the actual write in a goroutine, so the
+// browser can subscribe to lifecycle events on this id immediately).
+// Validation failures are surfaced as transfer-failed bus events so the
+// async caller doesn't have to plumb the error back through SSE itself.
+func (m *modeState) SendFileToSession(fp, id, name, mime string, data []byte) error {
 	if cap := m.store.Get().MaxTransferBytes; cap > 0 && int64(len(data)) > cap {
-		return "", fmt.Errorf("file size %d exceeds local cap %d", len(data), cap)
+		err := fmt.Errorf("file size %d exceeds local cap %d", len(data), cap)
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: err.Error()})
+		return err
 	}
 	sess := m.lookupSession(fp)
 	if sess == nil {
-		return "", fmt.Errorf("no session %s", fp)
+		err := fmt.Errorf("no session %s", fp)
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: err.Error()})
+		return err
 	}
 	sess.mu.Lock()
 	conn := sess.wsConn
 	sess.mu.Unlock()
 	if conn == nil {
-		return "", errors.New("session not connected")
+		err := errors.New("session not connected")
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: err.Error()})
+		return err
 	}
-	return m.writeTransfer(conn, sess, name, mime, data)
+	return m.writeTransfer(conn, sess, id, name, mime, data)
 }
 
 // SendFileToManager is the client-side outbound path: write file-offer +
-// chunks to the manager WS.
-func (m *modeState) SendFileToManager(name, mime string, data []byte) (string, error) {
+// chunks to the manager WS. id semantics match SendFileToSession.
+func (m *modeState) SendFileToManager(id, name, mime string, data []byte) error {
 	if cap := m.store.Get().MaxTransferBytes; cap > 0 && int64(len(data)) > cap {
-		return "", fmt.Errorf("file size %d exceeds local cap %d", len(data), cap)
+		err := fmt.Errorf("file size %d exceeds local cap %d", len(data), cap)
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: err.Error()})
+		return err
 	}
 	m.mu.Lock()
 	conn := m.clientConn
 	mode := m.current
 	m.mu.Unlock()
 	if mode != modeClient {
-		return "", errors.New("not in client mode")
+		err := errors.New("not in client mode")
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: err.Error()})
+		return err
 	}
 	if conn == nil {
-		return "", errors.New("not connected")
+		err := errors.New("not connected")
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: err.Error()})
+		return err
 	}
-	return m.writeTransfer(conn, nil, name, mime, data)
+	return m.writeTransfer(conn, nil, id, name, mime, data)
 }
 
 // writeTransfer is shared by both directions. sess is non-nil only when
 // the manager is sending to a session (so seq numbers stay monotonic on
-// that session's counter).
-func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, name, mime string, data []byte) (string, error) {
+// that session's counter). The id is generated by the caller (the HTTP
+// handler) so the browser can subscribe to lifecycle events on it
+// before the first chunk hits the wire. Publishes transfer-progress on
+// the local bus after each chunk and transfer-completed / -failed at
+// end so the sender's UI can show a live progress bar without polling.
+func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, id, name, mime string, data []byte) error {
 	chunks := (len(data) + transferRawChunk - 1) / transferRawChunk
 	if chunks == 0 {
 		chunks = 1
 	}
-	id := newTransferID()
+	sizeBytes := int64(len(data))
 
 	offer := map[string]any{
 		"type":        "file-offer",
@@ -389,9 +437,15 @@ func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, name, mim
 	offerCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	if err := writeFrame(offerCtx, conn, offer); err != nil {
 		cancel()
-		return "", fmt.Errorf("send offer: %w", err)
+		m.bus.Publish("transfer-failed", transferLifecycleEvent{TransferID: id, Name: name, Reason: "send offer: " + err.Error()})
+		return fmt.Errorf("send offer: %w", err)
 	}
 	cancel()
+	// Initial progress beat lets the sender's UI show 0/N immediately
+	// rather than waiting until the first chunk is on the wire.
+	m.bus.Publish("transfer-progress", transferProgressEvent{
+		TransferID: id, Name: name, ChunksDone: 0, ChunksTotal: chunks, SizeBytes: sizeBytes,
+	})
 
 	for i := 0; i < chunks; i++ {
 		start := i * transferRawChunk
@@ -410,10 +464,18 @@ func (m *modeState) writeTransfer(conn *websocket.Conn, sess *session, name, mim
 		err := writeFrame(ctx, conn, frame)
 		ccancel()
 		if err != nil {
-			return id, fmt.Errorf("send chunk %d/%d: %w", i+1, chunks, err)
+			m.bus.Publish("transfer-failed", transferLifecycleEvent{
+				TransferID: id, Name: name,
+				Reason: fmt.Sprintf("send chunk %d/%d: %v", i+1, chunks, err),
+			})
+			return fmt.Errorf("send chunk %d/%d: %w", i+1, chunks, err)
 		}
+		m.bus.Publish("transfer-progress", transferProgressEvent{
+			TransferID: id, Name: name, ChunksDone: i + 1, ChunksTotal: chunks, SizeBytes: sizeBytes,
+		})
 	}
-	return id, nil
+	m.bus.Publish("transfer-completed", transferLifecycleEvent{TransferID: id, Name: name})
+	return nil
 }
 
 // sendCancel writes a file-cancel frame to the peer. Best-effort — the
@@ -464,6 +526,29 @@ func decodeCancel(raw []byte) (fileCancelFrame, error) {
 		return fileCancelFrame{}, fmt.Errorf("decode cancel: %w", err)
 	}
 	return f, nil
+}
+
+func decodeAccept(raw []byte) (fileAcceptFrame, error) {
+	var f fileAcceptFrame
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return fileAcceptFrame{}, fmt.Errorf("decode accept: %w", err)
+	}
+	return f, nil
+}
+
+// sendAccept writes a file-accept frame back to the sender after the
+// receiver's startInbound succeeded. Best-effort — failure here just
+// means the sender won't see the "Accepted" toast; the actual transfer
+// proceeds either way.
+func sendAccept(conn *websocket.Conn, sess *session, id string) {
+	frame := map[string]any{
+		"type":        "file-accept",
+		"transfer_id": id,
+	}
+	stampSeq(sess, frame)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = writeFrame(ctx, conn, frame)
 }
 
 // decodeFilenameHeader decodes an X-Transfer-Filename header value. Senders

@@ -144,12 +144,128 @@
     return b;
   }
 
+  // ---- Drag-and-drop sender + outbound progress ----------------------
+  //
+  // attachDropTarget wires drag events on `host` so a file dropped onto
+  // it triggers `onDrop(file)`. The .drop-target-active class is toggled
+  // so callers can style the highlight. The handler is async-aware;
+  // attachDropTarget itself doesn't care about the upload mechanics.
+  function attachDropTarget(host, onDrop) {
+    if (!host) return;
+    let depth = 0;
+    host.addEventListener('dragenter', e => {
+      if (!hasFiles(e.dataTransfer)) return;
+      e.preventDefault();
+      depth++;
+      host.classList.add('drop-target-active');
+    });
+    host.addEventListener('dragover', e => {
+      if (!hasFiles(e.dataTransfer)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    host.addEventListener('dragleave', () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) host.classList.remove('drop-target-active');
+    });
+    host.addEventListener('drop', e => {
+      if (!hasFiles(e.dataTransfer)) return;
+      e.preventDefault();
+      depth = 0;
+      host.classList.remove('drop-target-active');
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) onDrop(file);
+    });
+  }
+
+  function hasFiles(dt) {
+    if (!dt) return false;
+    if (dt.types) {
+      for (const t of dt.types) if (t === 'Files') return true;
+    }
+    return false;
+  }
+
+  // outboundCards keys progress cards by transfer_id so the host page
+  // can route SSE lifecycle events (progress / accepted / completed /
+  // failed) to the right node without keeping its own registry.
+  const outboundCards = new Map();
+
+  // beginOutbound renders a progress card in `host` and registers it
+  // under the given transfer id. The card listens (via handleLifecycle)
+  // for matching events and auto-dismisses 3s after completion. Returns
+  // the node so the caller can position / pin it.
+  function beginOutbound(host, info) {
+    if (!host || !info || !info.id) return null;
+    const card = document.createElement('div');
+    card.className = 'xfer-progress';
+    card.dataset.transferId = info.id;
+
+    const label = document.createElement('div');
+    label.className = 'xfer-progress-label';
+    label.textContent = 'Sending: ' + (info.name || 'untitled');
+    card.appendChild(label);
+
+    const bar = document.createElement('progress');
+    bar.max = 1;
+    bar.value = 0;
+    card.appendChild(bar);
+
+    const status = document.createElement('div');
+    status.className = 'xfer-progress-status';
+    status.textContent = info.sizeBytes ? ('Queued · ' + formatBytes(info.sizeBytes)) : 'Queued';
+    card.appendChild(status);
+
+    host.appendChild(card);
+    outboundCards.set(info.id, { card, label, bar, status, accepted: false });
+    return card;
+  }
+
+  // handleLifecycle is fed each transfer-progress / -accepted /
+  // -completed / -failed SSE event by the host page. Unknown ids are
+  // ignored — a card from another tab or a stale session card may
+  // already have been dismissed.
+  function handleLifecycle(kind, ev) {
+    const c = outboundCards.get(ev.transfer_id);
+    if (!c) return;
+    if (kind === 'progress') {
+      const done = ev.chunks_done || 0;
+      const total = ev.chunks_total || 1;
+      c.bar.max = total;
+      c.bar.value = done;
+      const prefix = c.accepted ? 'Sending' : 'Sending';
+      c.status.textContent = prefix + ' · chunk ' + done + '/' + total;
+    } else if (kind === 'accepted') {
+      c.accepted = true;
+      c.status.textContent = 'Accepted, sending…';
+    } else if (kind === 'completed') {
+      c.bar.value = c.bar.max;
+      c.status.textContent = 'Sent.';
+      setTimeout(() => {
+        c.card.remove();
+        outboundCards.delete(ev.transfer_id);
+      }, 3000);
+    } else if (kind === 'failed') {
+      c.status.textContent = 'Failed: ' + (ev.reason || 'unknown');
+      c.card.classList.add('xfer-progress-failed');
+      const close = mkBtn('Dismiss', () => {
+        c.card.remove();
+        outboundCards.delete(ev.transfer_id);
+      });
+      c.card.appendChild(close);
+    }
+  }
+
   window.zoetropeTransfer = {
     pickAndSend,
+    sendFile,
     inboxURL,
     entryURLFor,
     dismissInbox,
     formatBytes,
     renderInboundNotification,
+    attachDropTarget,
+    beginOutbound,
+    handleLifecycle,
   };
 })();

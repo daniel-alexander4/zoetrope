@@ -811,7 +811,7 @@ func (m *modeState) managerReadLoop(ctx context.Context, sess *session, conn *we
 				"fingerprint": sess.certFP,
 				"payload":     json.RawMessage(raw),
 			})
-		case "file-offer", "file-chunk", "file-cancel":
+		case "file-offer", "file-chunk", "file-cancel", "file-accept":
 			m.handleInboundTransferFrame(hdr.Type, raw, sess.certFP, sess, conn, "from-session")
 		default:
 			log.Printf("manager: unknown frame type %q from session %s", hdr.Type, sess.certFP[:8])
@@ -833,7 +833,7 @@ func (m *modeState) clientReadLoop(ctx context.Context, conn *websocket.Conn) {
 			break
 		}
 		switch hdr.Type {
-		case "file-offer", "file-chunk", "file-cancel":
+		case "file-offer", "file-chunk", "file-cancel", "file-accept":
 			// File transfer terminates in the Go process (chunks reassemble
 			// here, then the browser fetches the complete inbox entry).
 			// Don't relay these to the browser SSE bus as plain verbs.
@@ -874,6 +874,17 @@ func (m *modeState) handleInboundTransferFrame(verb string, raw []byte, sourceFP
 			sendCancel(conn, sess, offer.TransferID, reject)
 			return
 		}
+		// Ack the offer so the sender's UI can flip from "Sending…" to
+		// "Accepted, sending…". Informational — the sender is already
+		// writing chunks.
+		sendAccept(conn, sess, offer.TransferID)
+	case "file-accept":
+		acc, err := decodeAccept(raw)
+		if err != nil {
+			log.Printf("transfer accept decode: %v", err)
+			return
+		}
+		m.bus.Publish("transfer-accepted", transferLifecycleEvent{TransferID: acc.TransferID})
 	case "file-chunk":
 		chunk, err := decodeChunkFrame(raw)
 		if err != nil {

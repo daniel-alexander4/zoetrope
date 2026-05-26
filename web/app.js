@@ -1041,18 +1041,46 @@
   document.getElementById('btn-leave').addEventListener('click', networkStandalone);
 
   // ---- File transfer (client → manager) -------------------------------
+  async function sendClientFile(file) {
+    try {
+      const res = await window.zoetropeTransfer.sendFile('/api/network/transfer', file);
+      if (res && res.transfer_id) {
+        const host = document.getElementById('client-inbox');
+        window.zoetropeTransfer.beginOutbound(host, {
+          id: res.transfer_id,
+          name: res.name || file.name,
+          sizeBytes: res.size_bytes ?? file.size,
+        });
+      }
+    } catch (err) {
+      console.warn('send failed:', err);
+      alert('Send failed: ' + err.message);
+    }
+  }
   document.getElementById('btn-client-attach').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
-      await window.zoetropeTransfer.pickAndSend('/api/network/transfer');
-    } catch (err) {
-      console.warn('attach failed:', err);
-      alert('Send failed: ' + err.message);
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.style.display = 'none';
+      input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        input.remove();
+        if (file) await sendClientFile(file);
+      }, { once: true });
+      document.body.appendChild(input);
+      input.click();
     } finally {
       btn.disabled = false;
     }
   });
+  // Drag-and-drop sender on the client-side overlay so a file dropped
+  // anywhere in #client-status (URL row + Leave button + inbox area) goes
+  // to the manager. Scoped to that element to avoid hijacking drops
+  // anywhere else on the canvas.
+  const clientStatus = document.getElementById('client-status');
+  if (clientStatus) window.zoetropeTransfer.attachDropTarget(clientStatus, sendClientFile);
 
   // ---- Voice call (bidirectional) -------------------------------------
   //
@@ -1212,6 +1240,14 @@
         window.zoetropeTransfer.renderInboundNotification(host, ev);
       } catch (err) { console.error(err); }
     });
+    // Sender-side lifecycle for client → manager uploads. Routed through
+    // zoetropeTransfer so the matching outbound progress card updates.
+    for (const kind of ['progress', 'accepted', 'completed', 'failed']) {
+      es.addEventListener('transfer-' + kind, e => {
+        try { window.zoetropeTransfer.handleLifecycle(kind, JSON.parse(e.data)); }
+        catch (err) { console.error(err); }
+      });
+    }
   }
 
   async function initNetworkMode() {

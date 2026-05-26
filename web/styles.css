@@ -924,6 +924,54 @@ body.mode-field .balls-only { display: none !important; }
   margin-left: auto;
 }
 
+/* Drop-target highlight: applied by attachDropTarget while a file is
+   being dragged over the host. Uses outline so it doesn't move the
+   layout — the host's own border/padding stay put. */
+.drop-target-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background-color: color-mix(in oklab, var(--accent) 6%, transparent);
+}
+
+/* Outbound progress card. Rendered in whichever host initiated the send
+   (.session-inbox on a session card, #files-card on MI, #client-inbox
+   on the client overlay). Auto-removed 3s after completed. */
+.xfer-progress {
+  background: var(--surface);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.xfer-progress-label {
+  font-size: 12px;
+  color: var(--text);
+}
+.xfer-progress progress {
+  width: 100%;
+  height: 6px;
+}
+.xfer-progress-status {
+  font-size: 11px;
+  color: var(--subtext);
+}
+.xfer-progress-failed { border-color: var(--danger); }
+.xfer-progress-failed .xfer-progress-status { color: var(--danger); }
+.xfer-progress button {
+  align-self: flex-end;
+  background: var(--surface);
+  color: var(--subtext);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.xfer-progress button:hover { background: var(--overlay); }
+
 /* ---- Voice call --------------------------------------------------- */
 
 .session-call {
