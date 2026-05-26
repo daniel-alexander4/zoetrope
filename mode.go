@@ -145,6 +145,7 @@ type sessionSnapshot struct {
 	Label       string    `json:"label,omitempty"`
 	Connected   bool      `json:"connected"`
 	CreatedAt   time.Time `json:"created_at"`
+	ClientID    string    `json:"client_id,omitempty"`
 }
 
 func (m *modeState) Snapshot() modeSnapshot {
@@ -167,6 +168,7 @@ func (m *modeState) Snapshot() modeSnapshot {
 			Label:       s.label,
 			Connected:   s.wsConn != nil,
 			CreatedAt:   s.createdAt,
+			ClientID:    m.sessionClients[fp],
 		})
 		s.mu.Unlock()
 	}
@@ -559,6 +561,7 @@ func (m *modeState) CreateSession(clientID string) (string, sessionSnapshot, err
 		Fingerprint: fp,
 		Connected:   false,
 		CreatedAt:   now,
+		ClientID:    clientID,
 	}
 	m.bus.Publish("session-created", snap)
 	return url, snap, nil
@@ -887,14 +890,28 @@ func (m *modeState) handleInboundTransferFrame(verb string, raw []byte, sourceFP
 		if !done {
 			return
 		}
-		entry := m.finalizeInbound(rx)
+		m.mu.Lock()
+		clientID := m.sessionClients[sourceFP]
+		m.mu.Unlock()
+		entry, ferr := m.finalizeInbound(rx, clientID)
+		if ferr != nil {
+			log.Printf("transfer finalize %s: %v", rx.id, ferr)
+			sendCancel(conn, sess, rx.id, "storage-error")
+			return
+		}
+		entryURL := "/api/inbox/" + entry.id
+		if clientID != "" {
+			entryURL = "/api/clients/" + clientID + "/inbox/" + entry.id
+		}
 		m.bus.Publish("file-received", fileReceivedEvent{
 			TransferID: entry.id,
 			Name:       entry.name,
-			SizeBytes:  int64(len(entry.data)),
+			SizeBytes:  entry.sizeBytes,
 			MIME:       entry.mime,
 			SourceFP:   entry.sourceFP,
 			Direction:  direction,
+			ClientID:   clientID,
+			EntryURL:   entryURL,
 		})
 	case "file-cancel":
 		cancelFrame, err := decodeCancel(raw)

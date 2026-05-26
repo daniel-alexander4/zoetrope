@@ -58,11 +58,23 @@
     return '/api/inbox/' + encodeURIComponent(id);
   }
 
-  async function dismissInbox(id) {
+  // entryURLFor returns the fetch URL for a file-received SSE event. The
+  // server sends `entry_url` directly for bound entries (persisted under
+  // the client dir) and we fall back to the legacy in-memory URL when
+  // older events don't carry it.
+  function entryURLFor(ev) {
+    return ev.entry_url || inboxURL(ev.transfer_id);
+  }
+
+  async function dismissInbox(ev) {
+    // Persistent (client-bound) entries delete via their entry_url;
+    // in-memory entries delete via /api/inbox/{id}. The DELETE-on-
+    // entry_url path also works for the persistent case.
+    const url = entryURLFor(ev);
     try {
-      await fetch(inboxURL(id), { method: 'DELETE', headers: { 'X-Zoetrope': '1' } });
+      await fetch(url, { method: 'DELETE', headers: { 'X-Zoetrope': '1' } });
     } catch (err) {
-      /* best-effort — entry will TTL out server-side anyway */
+      /* best-effort — in-memory entries TTL out anyway, persistent entries can be re-dismissed from the Files card */
     }
   }
 
@@ -93,22 +105,25 @@
 
     const actions = document.createElement('div');
     actions.className = 'xfer-actions';
+    const url = entryURLFor(ev);
     const save = mkBtn('Save', () => {
       const a = document.createElement('a');
-      a.href = inboxURL(ev.transfer_id);
+      a.href = url;
       a.download = ev.name || '';
       document.body.appendChild(a);
       a.click();
       a.remove();
-      // GET consumes the inbox entry; nothing further to dismiss.
+      // For in-memory entries the GET consumed the entry. For bound
+      // entries the file survives on disk and is managed from the
+      // Files card; either way we drop this transient notification.
       card.remove();
     });
     const open = mkBtn('Open', () => {
-      window.open(inboxURL(ev.transfer_id), '_blank', 'noopener');
+      window.open(url, '_blank', 'noopener');
       card.remove();
     });
     const dismiss = mkBtn('Dismiss', () => {
-      dismissInbox(ev.transfer_id);
+      dismissInbox(ev);
       card.remove();
     }, 'xfer-dismiss');
     actions.appendChild(save);
@@ -132,6 +147,7 @@
   window.zoetropeTransfer = {
     pickAndSend,
     inboxURL,
+    entryURLFor,
     dismissInbox,
     formatBytes,
     renderInboundNotification,

@@ -60,14 +60,20 @@ type transferRX struct {
 	lastActivity time.Time
 }
 
-// inboxEntry is a completed transfer holding bytes until the browser fetches them.
+// inboxEntry is a completed transfer. For unbound (in-memory) entries
+// `data` holds the bytes until the browser fetches and consumeInbox
+// drops the entry. For bound entries (persisted under the client's
+// dir), `data` is nil — the blob lives on disk and is fetched via
+// /api/clients/<cid>/inbox/<id>. `sizeBytes` is set in both cases so
+// the SSE event can report size without inspecting data.
 type inboxEntry struct {
-	id       string
-	name     string
-	mime     string
-	sourceFP string
-	data     []byte
-	addedAt  time.Time
+	id        string
+	name      string
+	mime      string
+	sourceFP  string
+	sizeBytes int64
+	data      []byte
+	addedAt   time.Time
 }
 
 // On-wire shapes.
@@ -93,7 +99,12 @@ type fileCancelFrame struct {
 // fileReceivedEvent is the SSE payload published when a transfer completes.
 // `direction` is "from-session" when the manager received from a session,
 // "from-manager" when the client received from the manager. Browsers route
-// off this to decide whether they're the audience.
+// off this to decide whether they're the audience. `entry_url` is the
+// fetch URL for the bytes — points at /api/inbox/<id> for in-memory
+// entries (5-min TTL, consumed on fetch) and at
+// /api/clients/<cid>/inbox/<id> for client-bound persistent entries.
+// `client_id` is non-empty for bound entries; the MI Files card uses it
+// to refresh the relevant client's inbox list.
 type fileReceivedEvent struct {
 	TransferID string `json:"transfer_id"`
 	Name       string `json:"name"`
@@ -101,6 +112,8 @@ type fileReceivedEvent struct {
 	MIME       string `json:"mime,omitempty"`
 	SourceFP   string `json:"source_fp,omitempty"`
 	Direction  string `json:"direction"`
+	ClientID   string `json:"client_id,omitempty"`
+	EntryURL   string `json:"entry_url"`
 }
 
 // newTransferID returns a short random hex string used as a transfer ID.
@@ -190,26 +203,50 @@ func (m *modeState) addChunk(chunk fileChunkFrame) (rx *transferRX, done bool, e
 	return rx, true, nil
 }
 
-// finalizeInbound moves a fully-received transfer from in-progress into
-// the inbox and returns the entry the caller publishes a notification for.
-func (m *modeState) finalizeInbound(rx *transferRX) *inboxEntry {
+// finalizeInbound moves a fully-received transfer out of in-progress.
+// When clientID is non-empty, the bytes are persisted under that
+// client's dir and the returned entry references the on-disk record
+// (data is nil; fetch via /api/clients/<cid>/inbox/<id>). When clientID
+// is empty, the entry holds bytes in the in-memory inbox (5-min TTL,
+// consumed on first fetch via /api/inbox/<id>). Returns an error only
+// when persistence fails — the caller relays it as a file-cancel.
+func (m *modeState) finalizeInbound(rx *transferRX, clientID string) (*inboxEntry, error) {
 	out := make([]byte, 0, rx.receivedSz)
 	for _, c := range rx.received {
 		out = append(out, c...)
 	}
-	entry := &inboxEntry{
-		id:       rx.id,
-		name:     rx.name,
-		mime:     rx.mime,
-		sourceFP: rx.sourceFP,
-		data:     out,
-		addedAt:  time.Now(),
-	}
 	m.transferMu.Lock()
 	delete(m.inProgress, rx.id)
+	m.transferMu.Unlock()
+
+	if clientID != "" && m.clients != nil {
+		rec, err := m.clients.InboxAdd(clientID, rx.name, rx.mime, out, rx.sourceFP)
+		if err != nil {
+			return nil, err
+		}
+		return &inboxEntry{
+			id:        rec.ID,
+			name:      rec.Name,
+			mime:      rec.MIME,
+			sourceFP:  rec.SourceFP,
+			sizeBytes: rec.SizeBytes,
+			addedAt:   rec.ReceivedAt,
+		}, nil
+	}
+
+	entry := &inboxEntry{
+		id:        rx.id,
+		name:      rx.name,
+		mime:      rx.mime,
+		sourceFP:  rx.sourceFP,
+		sizeBytes: rx.receivedSz,
+		data:      out,
+		addedAt:   time.Now(),
+	}
+	m.transferMu.Lock()
 	m.inbox[rx.id] = entry
 	m.transferMu.Unlock()
-	return entry
+	return entry, nil
 }
 
 // abortInbound drops an in-progress transfer (peer canceled or receive

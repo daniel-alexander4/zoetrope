@@ -226,6 +226,11 @@
     const el = entry.node.querySelector('.session-status');
     el.textContent = status;
     el.dataset.status = status;
+    // Keep entry.snap.connected synced so findLiveSessionForClient (in
+    // the Files card) reflects connection changes without a full
+    // /api/mode/state refetch.
+    entry.snap.connected = (status === 'connected');
+    updateFilesSendState();
   }
 
   function setSessionLabel(fp, label) {
@@ -481,9 +486,15 @@
         const ev = JSON.parse(e.data);
         if (ev.direction !== 'from-session') return; // /manage only surfaces session→manager arrivals
         const entry = state.sessions.get(ev.source_fp);
-        if (!entry) return;
-        const host = entry.node.querySelector('.session-inbox');
-        window.zoetropeTransfer.renderInboundNotification(host, ev);
+        if (entry) {
+          const host = entry.node.querySelector('.session-inbox');
+          window.zoetropeTransfer.renderInboundNotification(host, ev);
+        }
+        // Refresh the Files card inbox when this is the client we're
+        // currently viewing — keeps the list live without a manual refetch.
+        if (ev.client_id && ev.client_id === filesInboxClientID) {
+          refreshFilesInbox(ev.client_id);
+        }
       } catch (err) { console.error(err); }
     });
     for (const verb of ['audio-offer', 'audio-answer', 'audio-ice', 'audio-bye']) {
@@ -587,6 +598,8 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       state.clients = await r.json();
       renderClientsList();
+      renderFilesPicker();
+      updateFilesSendState();
     } catch (err) {
       console.warn('clients list:', err);
     }
@@ -760,6 +773,156 @@
     }
   });
 
+  // ---- Files card (per-client send + persistent inbox) --------------
+
+  let filesInboxClientID = null;
+
+  function renderFilesPicker() {
+    const sel = document.getElementById('files-client-picker');
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = state.clients.length ? 'Pick a client…' : 'No clients yet';
+    sel.appendChild(blank);
+    for (const c of state.clients) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    }
+    if (prev && state.clients.some(c => c.id === prev)) sel.value = prev;
+  }
+
+  function findLiveSessionForClient(clientID) {
+    for (const entry of state.sessions.values()) {
+      const s = entry.snap;
+      if (s && s.client_id === clientID && s.connected) return s.fingerprint;
+    }
+    return '';
+  }
+
+  function updateFilesSendState() {
+    const sel = document.getElementById('files-client-picker');
+    const input = document.getElementById('files-send-input');
+    const btn = document.getElementById('files-send-btn');
+    if (!sel || !input || !btn) return;
+    const clientID = sel.value;
+    if (!clientID) {
+      btn.disabled = true;
+      btn.title = 'Pick a client first';
+      return;
+    }
+    if (!findLiveSessionForClient(clientID)) {
+      btn.disabled = true;
+      btn.title = 'No live session bound to this client';
+      return;
+    }
+    const hasFile = input.files && input.files.length > 0;
+    btn.disabled = !hasFile;
+    btn.title = hasFile ? 'Send to active session' : 'Choose a file first';
+  }
+
+  async function refreshFilesInbox(clientID) {
+    filesInboxClientID = clientID || null;
+    const list = document.getElementById('files-inbox-list');
+    const empty = document.getElementById('files-empty');
+    if (!list || !empty) return;
+    list.innerHTML = '';
+    if (!clientID) {
+      empty.hidden = false;
+      empty.textContent = 'Pick a client to see received files.';
+      updateFilesSendState();
+      return;
+    }
+    try {
+      const r = await fetch('/api/clients/' + encodeURIComponent(clientID) + '/inbox', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const entries = await r.json();
+      if (!entries.length) {
+        empty.hidden = false;
+        empty.textContent = 'No files received from this client yet.';
+      } else {
+        empty.hidden = true;
+        const tmpl = document.getElementById('files-inbox-template');
+        for (const e of entries) {
+          list.appendChild(buildFilesEntry(clientID, e, tmpl, list, empty));
+        }
+      }
+    } catch (err) {
+      console.warn('inbox list:', err);
+      empty.hidden = false;
+      empty.textContent = 'Failed to load inbox.';
+    }
+    updateFilesSendState();
+  }
+
+  function buildFilesEntry(clientID, e, tmpl, list, empty) {
+    const node = tmpl.content.firstElementChild.cloneNode(true);
+    node.dataset.eid = e.id;
+    node.querySelector('.files-entry-name').textContent = e.name || '(untitled)';
+    node.querySelector('.files-entry-detail').textContent =
+      window.zoetropeTransfer.formatBytes(e.size_bytes) + ' · ' + new Date(e.received_at).toLocaleString();
+    const open = node.querySelector('.files-open');
+    open.href = '/api/clients/' + encodeURIComponent(clientID) + '/inbox/' + encodeURIComponent(e.id);
+    open.download = e.name || '';
+    node.querySelector('.files-dismiss').addEventListener('click', async () => {
+      try {
+        await csrfFetch('/api/clients/' + encodeURIComponent(clientID) + '/inbox/' + encodeURIComponent(e.id), { method: 'DELETE' });
+        node.remove();
+        if (!list.children.length) {
+          empty.hidden = false;
+          empty.textContent = 'No files received from this client yet.';
+        }
+      } catch (err) { console.error('dismiss:', err); }
+    });
+    return node;
+  }
+
+  function wireFilesCard() {
+    const sel = document.getElementById('files-client-picker');
+    const input = document.getElementById('files-send-input');
+    const btn = document.getElementById('files-send-btn');
+    const status = document.getElementById('files-send-status');
+    if (!sel || !input || !btn || !status) return;
+    sel.addEventListener('change', () => refreshFilesInbox(sel.value));
+    input.addEventListener('change', updateFilesSendState);
+    btn.addEventListener('click', async () => {
+      const clientID = sel.value;
+      const file = input.files && input.files[0];
+      if (!clientID || !file) return;
+      const fp = findLiveSessionForClient(clientID);
+      if (!fp) {
+        status.textContent = 'No live session bound to this client.';
+        status.classList.add('error');
+        return;
+      }
+      status.classList.remove('error');
+      status.textContent = 'Sending ' + file.name + '…';
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/sessions/' + encodeURIComponent(fp) + '/transfer', {
+          method: 'POST',
+          headers: {
+            'X-Zoetrope': '1',
+            'X-Transfer-Filename': encodeURIComponent(file.name || 'untitled'),
+            'X-Transfer-Mime': file.type || 'application/octet-stream',
+          },
+          body: file,
+        });
+        if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
+        status.textContent = 'Sent.';
+        input.value = '';
+      } catch (err) {
+        status.classList.add('error');
+        status.textContent = err.message || String(err);
+      } finally {
+        updateFilesSendState();
+      }
+    });
+  }
+
   // ---- MI card drag-to-reorder --------------------------------------
   //
   // Each MI card's <header> is the drag handle (cursor: grab in CSS).
@@ -890,6 +1053,7 @@
       console.warn('editor loadConfig failed:', err);
     });
     setupMICardDrag();
+    wireFilesCard();
     startEventSource();
     heartbeat();
   }

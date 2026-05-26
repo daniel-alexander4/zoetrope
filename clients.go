@@ -195,6 +195,130 @@ func (s *clientsStore) BeginSession(clientID, sessionCertFP string) (string, err
 	return sid, nil
 }
 
+// InboxEntry is the on-disk record for one received file. The blob is
+// stored alongside in <clientDir>/inbox/<id>/blob; meta.json carries
+// everything the UI needs to list the entry without reading the blob.
+type InboxEntry struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	MIME       string    `json:"mime,omitempty"`
+	SizeBytes  int64     `json:"size_bytes"`
+	ReceivedAt time.Time `json:"received_at"`
+	SourceFP   string    `json:"source_fp,omitempty"`
+}
+
+// InboxAdd persists a received file under the client's dir. id is a
+// sortable timestamp + 6-hex suffix so listings are naturally newest-
+// first when reverse-sorted, and collisions are vanishingly rare.
+func (s *clientsStore) InboxAdd(clientID, name, mime string, data []byte, sourceFP string) (InboxEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.loadClientRecord(clientID); err != nil {
+		return InboxEntry{}, err
+	}
+	now := time.Now()
+	id := newInboxEntryID(now)
+	entryDir := filepath.Join(s.dir, clientID, "inbox", id)
+	for i := 1; ; i++ {
+		if err := os.MkdirAll(entryDir, 0o700); err == nil {
+			break
+		} else if !errors.Is(err, fs.ErrExist) {
+			return InboxEntry{}, err
+		}
+		// Same nanosecond collision (effectively impossible with the
+		// random suffix, but defensive): bump and retry.
+		id = fmt.Sprintf("%s-%d", id, i)
+		entryDir = filepath.Join(s.dir, clientID, "inbox", id)
+	}
+	rec := InboxEntry{
+		ID:         id,
+		Name:       name,
+		MIME:       mime,
+		SizeBytes:  int64(len(data)),
+		ReceivedAt: now,
+		SourceFP:   sourceFP,
+	}
+	if err := s.writeJSON(filepath.Join(entryDir, "meta.json"), rec); err != nil {
+		return InboxEntry{}, err
+	}
+	if err := s.writeFile(filepath.Join(entryDir, "blob"), data); err != nil {
+		return InboxEntry{}, err
+	}
+	return rec, nil
+}
+
+// InboxList returns every persisted entry for a client, newest first.
+// Damaged entries are skipped (self-healing, same shape as session
+// listing).
+func (s *clientsStore) InboxList(clientID string) ([]InboxEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.loadClientRecord(clientID); err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(filepath.Join(s.dir, clientID, "inbox"))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]InboxEntry, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(s.dir, clientID, "inbox", e.Name(), "meta.json"))
+		if err != nil {
+			continue
+		}
+		var rec InboxEntry
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			continue
+		}
+		out = append(out, rec)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ReceivedAt.After(out[j].ReceivedAt) })
+	return out, nil
+}
+
+// InboxBlob serves the bytes of one entry plus its meta. The blob is
+// not deleted on read — the UI fetches lazily and the practitioner
+// dismisses explicitly via InboxDelete.
+func (s *clientsStore) InboxBlob(clientID, entryID string) ([]byte, InboxEntry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dir := filepath.Join(s.dir, clientID, "inbox", entryID)
+	metaRaw, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return nil, InboxEntry{}, err
+	}
+	var rec InboxEntry
+	if err := json.Unmarshal(metaRaw, &rec); err != nil {
+		return nil, InboxEntry{}, err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "blob"))
+	if err != nil {
+		return nil, InboxEntry{}, err
+	}
+	return data, rec, nil
+}
+
+// InboxDelete removes one entry's directory. Best-effort cleanup; a
+// surviving fragment is benign (List skips it on next read).
+func (s *clientsStore) InboxDelete(clientID, entryID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dir := filepath.Join(s.dir, clientID, "inbox", entryID)
+	return os.RemoveAll(dir)
+}
+
+func newInboxEntryID(t time.Time) string {
+	var b [3]byte
+	_, _ = rand.Read(b[:])
+	return t.UTC().Format("2006-01-02T15-04-05.000") + "-" + hex.EncodeToString(b[:])
+}
+
 // EndSession finalizes a session entry with endedAt + durationSec. Safe
 // to call multiple times; later calls overwrite earlier endings.
 func (s *clientsStore) EndSession(clientID, sessionID string) error {

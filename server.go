@@ -313,6 +313,49 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
+	// ---- Client inbox (persistent file transfers) ----
+	// Mirrors /api/inbox/{id} (in-memory, consumed on fetch) but the bytes
+	// live on disk under <clientDir>/inbox/<eid>/ and survive across
+	// sessions + binary restarts. The MI Files card lists/fetches via
+	// these endpoints.
+
+	mux.HandleFunc("GET /api/clients/{id}/inbox", func(w http.ResponseWriter, r *http.Request) {
+		list, err := modes.clients.InboxList(r.PathValue("id"))
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if list == nil {
+			list = []InboxEntry{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(list)
+	})
+	mux.HandleFunc("GET /api/clients/{id}/inbox/{eid}", func(w http.ResponseWriter, r *http.Request) {
+		data, rec, err := modes.clients.InboxBlob(r.PathValue("id"), r.PathValue("eid"))
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		mime := rec.MIME
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", mime)
+		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+		w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.PathEscape(rec.Name))
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(data)
+	})
+	mux.HandleFunc("DELETE /api/clients/{id}/inbox/{eid}", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		if err := modes.clients.InboxDelete(r.PathValue("id"), r.PathValue("eid")); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
 	return mux, nil
 }
 

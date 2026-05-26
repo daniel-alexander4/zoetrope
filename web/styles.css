@@ -1017,6 +1017,89 @@ button.danger:hover { filter: brightness(1.08); }
 }
 .audio-vol input[type="range"] { width: 100px; }
 
+/* Files card: client picker in the header, send-row underneath, then a
+   list of inbox entries. Mirrors audio-card / clients-card density. */
+#files-card[hidden] { display: none; }
+#files-card .section-header select {
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  min-width: 140px;
+}
+.files-send {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+.files-send input[type="file"] {
+  flex: 1;
+  min-width: 120px;
+  font-size: 12px;
+  color: var(--subtext);
+}
+.files-status {
+  font-size: 12px;
+  color: var(--subtext);
+  flex-basis: 100%;
+  min-height: 1em;
+}
+.files-status.error { color: var(--danger); }
+.files-inbox {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.files-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--base);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+}
+.files-entry-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.files-entry-name {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files-entry-detail {
+  font-size: 11px;
+  color: var(--subtext);
+}
+.files-entry-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.files-open {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  text-decoration: none;
+}
+.files-open:hover { background: var(--overlay); }
+
 /* Client-side audio surface (sits under #client-status). Visible only
    when audio.js reports a non-idle state — JS toggles the [hidden]
    attribute. */

@@ -178,6 +178,37 @@
         </div>
       </section>
 
+      <!-- Files: per-client send + persistent inbox. Send routes through
+           an active session bound to the picked client; the inbox lives
+           on disk under <clientDir>/inbox/ and survives across sessions
+           and binary restarts. -->
+      <section id="files-card" class="card" hidden>
+        <header class="section-header">
+          <h3>Files</h3>
+          <select id="files-client-picker" title="Pick a client to send to / view received files"></select>
+        </header>
+        <div id="files-send-row" class="files-send">
+          <input type="file" id="files-send-input">
+          <button id="files-send-btn" type="button" class="regen" disabled>Send</button>
+          <span id="files-send-status" class="files-status"></span>
+        </div>
+        <p id="files-empty" class="section-hint">No files received from this client yet.</p>
+        <ol id="files-inbox-list" class="files-inbox"></ol>
+      </section>
+
+      <template id="files-inbox-template">
+        <li class="files-entry">
+          <div class="files-entry-meta">
+            <span class="files-entry-name"></span>
+            <span class="files-entry-detail"></span>
+          </div>
+          <div class="files-entry-actions">
+            <a class="files-open" target="_blank" rel="noopener">Open</a>
+            <button type="button" class="files-dismiss regen">Dismiss</button>
+          </div>
+        </li>
+      </template>
+
       <section id="identity-panel" class="card identity-card" hidden data-collapsed="true">
         <header class="identity-header">
           <h3>My identity</h3>
