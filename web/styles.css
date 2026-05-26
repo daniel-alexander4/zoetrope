@@ -1476,6 +1476,10 @@ body.view-client .mi-only {
   grid-template-columns: 1fr;
   align-items: start; /* don't stretch shorter cards (Library) to match the editor's height */
   margin-bottom: 80px; /* clear space for the sticky #mi-hud below */
+  /* #editor-section gets a JS-driven `grid-row: span N` via
+     updateEditorSpan() in manage.js so the small cards stack tightly
+     beside it in the other column. Span is set inline on the element;
+     no static CSS rule lives here. */
 }
 @media (min-width: 880px) {
   .card-grid {

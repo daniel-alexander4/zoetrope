@@ -137,6 +137,9 @@
       setView('landing');
     }
     state.initialModeApplied = true;
+    // Card hidden states just changed; recompute the editor row-span so
+    // it spans exactly the visible small siblings beside it.
+    updateEditorSpan();
   }
 
   // ---- Identity collapse / expand ------------------------------------
@@ -980,6 +983,31 @@
     for (const card of grid.querySelectorAll(':scope > .card')) {
       wireMICardDrag(card);
     }
+    updateEditorSpan();
+  }
+
+  // updateEditorSpan makes the Active-playlist editor card claim as many
+  // grid rows as there are visible small cards beside it, so the small
+  // cards stack tightly in one column while the editor extends down the
+  // other. Without this, the editor's natural height forces its single
+  // grid row to be tall and any small card sharing the row gets a gap
+  // below it — and N "small" cards never stack adjacent to it.
+  //
+  // Triggers: init (after restore + wire), after each drop reorders DOM,
+  // and after applyMode flips card hidden states.
+  function updateEditorSpan() {
+    const grid = document.querySelector('.card-grid.mi-only');
+    const editor = document.getElementById('editor-section');
+    if (!grid || !editor) return;
+    if (editor.hidden) { editor.style.gridRow = ''; return; }
+    let n = 0;
+    for (const c of grid.children) {
+      if (c === editor) continue;
+      if (c.id === 'identity-panel') continue; // spans full row via its own rule
+      if (c.hidden) continue;
+      n++;
+    }
+    editor.style.gridRow = n > 0 ? 'span ' + n : '';
   }
 
   function wireMICardDrag(card) {
@@ -1039,6 +1067,7 @@
       else grid.insertBefore(from, card.nextSibling);
       clearMICardDropIndicators();
       saveMICardOrder(grid);
+      updateEditorSpan();
     });
   }
 
