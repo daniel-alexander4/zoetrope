@@ -7,14 +7,14 @@
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="page-manage nmode-standalone view-landing">
+<body class="page-manage nmode-standalone view-admin">
   <header id="manage-topbar">
     <div class="brand">
       <img src="icon.png" class="brand-mark" alt="">
       <div class="brand-name">Zoetrope</div>
       <span class="page-label">Hosting session</span>
     </div>
-    <button id="topbar-mint-url" class="topbar-mint" hidden title="Mint another connection URL — copies to clipboard so you can paste it to your client without leaving the live session view">+ URL</button>
+    <button id="topbar-mint-url" class="topbar-mint primary-cta" hidden title="Mint a connection URL — copies to clipboard so you can paste it to your client. While on the Loopback tab, copies the /?loopback URL instead.">+ Generate URL</button>
     <button id="btn-stop-hosting" hidden title="Tear down the listener and return to standalone">Stop hosting</button>
     <a class="back-link" href="/">← Ball view</a>
   </header>
@@ -25,46 +25,17 @@
          something happened even before scanning the session card below. -->
     <div id="generated-banner" class="generated-banner" hidden role="status" aria-live="polite"></div>
 
-    <!-- Landing view: two CTAs — Generate (mints and engages manager if
-         needed) and Enter Management Interface (switches to the MI view).
-         Visible only when body has .view-landing. -->
-    <section id="landing-card" class="card landing-only">
-      <h3>Hosting session</h3>
-      <p>
-        Generate a connection URL to share with your client, or step into
-        the Management Interface to configure playlists and drive live
-        sessions. The URL pins your practitioner identity, embeds a
-        one-time client cert, and stays valid for 10 minutes.
-      </p>
-      <div class="landing-actions">
-        <button id="btn-start" class="primary-cta">Generate connection URL</button>
-        <button id="btn-enter-mi" class="primary-cta secondary" title="Engage hosting and open the Management Interface">Enter Management Interface →</button>
-        <button id="btn-loopback" class="primary-cta secondary" title="Dev mode: engage manager + a synthetic in-process client session for testing the protocol on one machine">Loopback (dev)</button>
-      </div>
-      <div id="start-error" class="start-error"></div>
-      <div id="loopback-hint" class="loopback-hint" hidden>
-        Loopback engaged. Open this URL in a second tab to act as the client:
-        <code id="loopback-url"></code>
-      </div>
-    </section>
+    <!-- Surface a start error from auto-engage if /api/mode/host returns
+         non-OK on /manage load. Lives outside the card grid because no
+         card is rendered until hosting is engaged. -->
+    <div id="start-error" class="start-error"></div>
 
-    <!-- Sessions card: Landing-only. Surfaces the minted URLs and the
-         per-session transport / send-file controls. The MI is reserved
-         for playlist work; "Go to GCS" in the MI HUD brings the user
-         here when they need to manage URLs. -->
-    <section id="sessions" class="card landing-only" hidden>
-      <header>
-        <h3>Sessions</h3>
-        <button id="btn-new-session" title="Mint another connection URL for a new client">+ Generate connection URL</button>
-      </header>
-      <ol id="sessions-list"></ol>
-    </section>
-
-    <!-- MI-only card grid: Library picker (left) + Active playlist editor
-         (right). Identity sits below behind the Info button in the HUD —
-         body.show-info reveals it; otherwise it stays hidden. Future
-         audio / file-transfer / other panels join as additional cards. -->
-    <div id="mi-body" class="card-grid mi-only" role="tabpanel">
+    <!-- MI card grid: shown whenever hosting is engaged. The tab strip in
+         the bottom HUD (Loopback / Admin / Session) selects which cards
+         are visible via body.view-loopback / view-admin / view-session
+         and the per-card data-views attribute. Identity sits behind the
+         Info button. -->
+    <div id="mi-body" class="card-grid" role="tabpanel">
       <!-- Next session prep: writes to <clientDir>/intake.md for the
            selected client. BeginSession migrates this into the new
            session record's PreNotes and clears the file. -->
@@ -93,6 +64,16 @@
           <button id="btn-new-client-ok" type="button" class="regen">Create</button>
           <button id="btn-new-client-cancel" type="button" class="regen">Cancel</button>
         </div>
+      </section>
+      <section id="sessions" class="card" data-views="admin" hidden>
+        <header class="section-header">
+          <h3>Sessions</h3>
+          <button id="btn-new-session" type="button" class="regen" title="Mint another connection URL for a new client">+ Generate connection URL</button>
+        </header>
+        <p class="section-hint">
+          Minted URLs and the per-session transport / send-file controls. Each URL pins your practitioner identity, embeds a one-time client cert, and stays valid for 10 minutes.
+        </p>
+        <ol id="sessions-list"></ol>
       </section>
       <section id="library-card" class="card" data-views="admin" hidden>
         <header class="section-header">
@@ -292,17 +273,17 @@
       <div id="client-generated-url" class="client-generated-url" hidden></div>
     </section>
 
-    <!-- MI HUD: bottom strip. A1 carries two buttons — Go to GCS (back to
-         Landing for URL minting / session management) and Info (toggles
-         the identity card). A2 will populate this with the connection
-         status pill, modality pill row, and modality-filtered playlist
-         picker. -->
-    <div id="mi-hud" class="mi-only">
-      <button id="btn-show-gcs" type="button" class="hud-btn" title="Go to the Generate Connection String page">⇤ GCS</button>
+    <!-- MI HUD: bottom strip. Three tabs select which hosting view is
+         active. Loopback engages the synthetic dev session and opens the
+         split-pane iframe; Admin and Session are real-hosting views.
+         Switching between Loopback and Admin/Session flips the
+         underlying network mode (mutually exclusive at the server). -->
+    <div id="mi-hud">
       <span class="hud-spacer"></span>
-      <span class="hud-tabs" role="tablist" aria-label="MI view">
-        <button id="btn-show-admin" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Admin — between-session work (clients, playlists, identity)">Admin</button>
-        <button id="btn-show-session" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Live session — active playlist, audio, file transfer">Session</button>
+      <span class="hud-tabs" role="tablist" aria-label="Hosting view">
+        <button id="btn-show-loopback" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Loopback (dev) — synthetic in-process client, split-pane iframe">Loopback</button>
+        <button id="btn-show-admin" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Admin — between-session work (sessions, clients, playlists, identity)">Admin</button>
+        <button id="btn-show-session" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Live session — mirror, audio, file transfer, playlist">Session</button>
       </span>
       <span class="hud-spacer"></span>
       <button id="btn-show-info" type="button" class="hud-btn" title="Show / hide identity details" aria-pressed="false">Info</button>

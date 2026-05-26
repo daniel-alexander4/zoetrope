@@ -336,6 +336,18 @@ func (m *modeState) Loopback() error {
 	}
 
 	m.mu.Lock()
+	// Idempotent for re-engage: already in loopback (manager mode with the
+	// synthetic session present) → no-op success. Real-hosting manager
+	// mode is a distinct configuration that nulled the listener path; the
+	// frontend has to standalone-first before flipping into loopback.
+	if m.current == modeManager {
+		if _, ok := m.sessions[loopbackSessionFP]; ok {
+			m.mu.Unlock()
+			return nil
+		}
+		m.mu.Unlock()
+		return fmt.Errorf("stop hosting first")
+	}
 	if m.current != modeStandalone {
 		m.mu.Unlock()
 		return fmt.Errorf("already in %s mode", m.current)

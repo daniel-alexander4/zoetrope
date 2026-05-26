@@ -243,8 +243,8 @@ timeline of past sessions with date / time / duration.
 "🔗 Generate URL" from the client detail view mints a connection URL
 *bound to that client*. When the client connects, a session-log entry is
 opened automatically; when they disconnect, it's finalized with the
-duration. Connection URLs minted from Landing (the standalone "+"
-button) are unattached and don't log.
+duration. Connection URLs minted from the topbar "+ Generate URL" or
+from the Admin tab's Sessions card are unattached and don't log.
 
 Records live under `<user-config>/zoetrope/clients/<slug>/`:
 

@@ -1,15 +1,24 @@
-// manage.js: the /manage page — the hosting console. Lives between four
-// in-page views (toggled by body class, no routing):
-//   - view-landing: the entry card with two CTAs (Generate / Enter MI),
-//     plus the sessions card surfacing minted URLs.
-//   - view-admin: between-session work — Clients, Library, playlist
-//     editor (also visible in session), Identity.
-//   - view-session: during-call work — playlist editor, Audio, Files.
+// manage.js: the /manage page — the hosting console. Hosting auto-engages
+// when this page loads in standalone mode (the page IS the hosting
+// surface; no Landing CTA). The bottom HUD selects between four in-page
+// views (toggled by body class, no routing):
+//   - view-loopback: dev-only synthetic session. body.loopback-split is
+//     on; /?loopback shows in a right-half iframe; the left half shows
+//     the same cards as view-session so the dev can drive the playlist
+//     against the iframe client.
+//   - view-admin: between-session work — Sessions, Clients, Library,
+//     playlist editor (also visible in session), Identity.
+//   - view-session: during-call work — mirror, playlist editor, Audio,
+//     Files.
 //   - view-client: per-client detail page (notes + sessions timeline).
-// The single MI card grid hosts all cards; each carries data-views="..."
-// so CSS filters which cards a given view shows (one DOM, one drag
-// order — see styles.css for the filter rules). Client mode at the
-// network level is meaningless here, so it redirects to the ball page.
+// Loopback and real-hosting are mutually exclusive at the server (the
+// loopback path nulls the listener). Switching the Loopback tab in or
+// out of any real-hosting tab routes through standalone first; a confirm
+// fires when real sessions are connected so the practitioner doesn't
+// drop a live client by accident. The single MI card grid hosts all
+// cards; each carries data-views="..." so CSS filters which cards a
+// given view shows. Client mode at the network level is meaningless
+// here, so it redirects to the ball page.
 
 (() => {
   'use strict';
@@ -17,7 +26,7 @@
   const state = {
     nmode: 'standalone',
     sessions: new Map(), // fp → { node, snap }
-    view: 'landing',     // 'landing' | 'admin' | 'session' | 'client'
+    view: 'admin',       // 'loopback' | 'admin' | 'session' | 'client'
     initialModeApplied: false,
     clientID: null,      // which client view-client is currently showing
     clients: [],         // cached summary list (refreshed on entering MI)
@@ -78,45 +87,50 @@
 
   // ---- Page state -----------------------------------------------------
 
-  // setView toggles the in-page surface (Landing vs MI) by swapping body
-  // classes. CSS does the show/hide; no DOM rebuild, no fetch. Idempotent —
-  // calling it with the current view is a no-op. Leaving MI also clears
-  // body.show-info so the identity card doesn't surprise the user on
-  // their next MI visit.
+  // setView toggles the active hosting view by swapping body classes.
+  // CSS + per-card data-views filters do the show/hide; no DOM rebuild,
+  // no fetch. Idempotent. Leaving Admin clears body.show-info so the
+  // identity card doesn't surprise the user on their next Admin visit.
+  // Note: setView only updates the view — mode flips (loopback vs real)
+  // are owned by the HUD tab handlers, which call setView after the
+  // server-side mode change resolves.
   function setView(view) {
     state.view = view;
-    document.body.classList.remove('view-landing', 'view-admin', 'view-session', 'view-client');
+    document.body.classList.remove('view-loopback', 'view-admin', 'view-session', 'view-client');
     document.body.classList.add('view-' + view);
     if (view !== 'admin') {
-      // Show-info only makes sense in Admin (where Identity lives).
       document.body.classList.remove('show-info');
       const info = document.getElementById('btn-show-info');
       if (info) info.setAttribute('aria-pressed', 'false');
     }
     if (view !== 'client') {
-      // Drop the per-view client cursor so re-entering Clients starts fresh.
       state.clientID = null;
     }
+    const loopback = document.getElementById('btn-show-loopback');
     const admin = document.getElementById('btn-show-admin');
     const session = document.getElementById('btn-show-session');
+    if (loopback) loopback.setAttribute('aria-selected', view === 'loopback' ? 'true' : 'false');
     if (admin) admin.setAttribute('aria-selected', view === 'admin' ? 'true' : 'false');
     if (session) session.setAttribute('aria-selected', view === 'session' ? 'true' : 'false');
     updateTopbarMintVisibility();
-    // Card-visibility changed; recompute editor row-span so it covers
-    // the cards currently visible in the new view.
     updateEditorSpan();
   }
 
-  // Topbar mint button shows only inside the MI (Admin or Session view),
-  // while hosting is engaged. Landing already has its own + Generate, so
-  // showing it there would be redundant. Visibility flips on view changes
-  // and on mode snapshots.
+  // Topbar mint button is visible whenever hosting (real or loopback) is
+  // engaged. The click handler is context-aware: on view-loopback it
+  // copies the /?loopback URL (the iframe's URL); on real-hosting views
+  // it mints a fresh connection URL.
   function updateTopbarMintVisibility() {
     const btn = document.getElementById('topbar-mint-url');
     if (!btn) return;
-    const hosting = state.nmode === 'manager';
-    const inMI = state.view === 'admin' || state.view === 'session' || state.view === 'client';
-    btn.hidden = !(hosting && inMI);
+    btn.hidden = state.nmode !== 'manager';
+  }
+
+  // isLoopbackEngaged peeks at sessions to detect the synthetic dev
+  // session by its well-known fingerprint. Used by tab handlers to
+  // decide whether a mode flip is required.
+  function isLoopbackEngaged() {
+    return state.sessions.has('loopback');
   }
 
   function applyMode(snap) {
@@ -131,18 +145,21 @@
       window.location.href = '/';
       return;
     }
+    // /manage IS the hosting surface. Once init() has settled and the
+    // user explicitly stops hosting, there's nothing to show here —
+    // redirect to the ball page. Two gates: initialModeApplied stops
+    // the redirect during the pre-engage window of init(); flipping
+    // stops it during a deliberate tab-driven mode swap that passes
+    // through standalone on its way to the target mode.
+    if (mode === 'standalone' && state.initialModeApplied && !state.flipping) {
+      window.location.href = '/';
+      return;
+    }
 
-    const landing = document.getElementById('landing-card');
     const library = document.getElementById('library-card');
     const editor = document.getElementById('editor-section');
     const sessions = document.getElementById('sessions');
     const stopBtn = document.getElementById('btn-stop-hosting');
-
-    // landing-card is always present in the DOM; the view-class on body
-    // is what hides it in MI view. Sessions card is landing-only (CSS),
-    // so we only manage its hidden attribute for "has any URL been
-    // minted yet" — landing hides it visually until the first session.
-    landing.hidden = false;
 
     if (mode === 'manager') {
       library.hidden = false;
@@ -158,15 +175,14 @@
       document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
       refreshIdentityDisplay();
       renderSessions(snap.sessions || []);
-      // On first paint only, pick the view from session state: existing
-      // sessions → Admin (the user is returning to a live setup; Admin
-      // is the operational home, Session is one HUD click away); no
-      // sessions → Landing (the user chose to start fresh). Subsequent
-      // mode snapshots never auto-pivot — view changes are driven by
-      // explicit clicks (Enter MI / ← Landing / Admin / Session) so
-      // generating a URL from Landing doesn't yank the user away.
+      // First paint: settle on a default view that reflects current state.
+      // Loopback session present → view-loopback (the iframe is already
+      // engaged server-side; mirror that in the UI). Otherwise → Admin.
+      // Subsequent mode snapshots never auto-pivot — view changes are
+      // driven by explicit HUD tab clicks.
       if (!state.initialModeApplied) {
-        setView((snap.sessions && snap.sessions.length) ? 'admin' : 'landing');
+        setView(isLoopbackEngaged() ? 'loopback' : 'admin');
+        if (isLoopbackEngaged()) showLoopbackIframe();
       }
     } else { // standalone
       library.hidden = true;
@@ -177,29 +193,33 @@
       if (audioCard) audioCard.hidden = true;
       const clientsCard = document.getElementById('clients-card');
       if (clientsCard) clientsCard.hidden = true;
-      // Leaving manager → hang up any in-flight call so we don't hold the
-      // mic open or leak a live peer connection.
       if (window.zoetropeAudio && window.zoetropeAudio.getState().state !== 'idle') {
         window.zoetropeAudio.hangup();
       }
       state.sessions.clear();
       document.getElementById('sessions-list').innerHTML = '';
       document.getElementById('start-error').textContent = '';
-      // Standalone tears the synthetic loopback session down — the
-      // split-pane iframe goes with it.
-      document.body.classList.remove('loopback-split');
-      const frame = document.getElementById('loopback-iframe');
-      if (frame) { frame.src = ''; frame.hidden = true; }
-      const hint = document.getElementById('loopback-hint');
-      if (hint) hint.hidden = true;
-      // Returning from manager → standalone always lands on Landing.
-      setView('landing');
+      hideLoopbackIframe();
     }
     state.initialModeApplied = true;
     updateTopbarMintVisibility();
-    // Card hidden states just changed; recompute the editor row-span so
-    // it spans exactly the visible small siblings beside it.
     updateEditorSpan();
+  }
+
+  function showLoopbackIframe() {
+    document.body.classList.add('loopback-split');
+    const frame = document.getElementById('loopback-iframe');
+    if (frame) {
+      const url = window.location.origin + '/?loopback';
+      if (frame.src !== url) frame.src = url;
+      frame.hidden = false;
+    }
+  }
+
+  function hideLoopbackIframe() {
+    document.body.classList.remove('loopback-split');
+    const frame = document.getElementById('loopback-iframe');
+    if (frame) { frame.src = ''; frame.hidden = true; }
   }
 
   // ---- Identity collapse / expand ------------------------------------
@@ -603,20 +623,26 @@
     }
   }
 
-  document.getElementById('btn-start').addEventListener('click', e => {
-    generateConnectionString(e.currentTarget, document.getElementById('start-error'));
-  });
   document.getElementById('btn-new-session').addEventListener('click', e => {
     generateConnectionString(e.currentTarget, null);
   });
-  // Topbar mint: lets the practitioner mint another URL without leaving
-  // their live-session context. URL is copied to the clipboard so it's
-  // ready to paste into a chat/email — the new session is also tracked
-  // via the same addSessionToList path and surfaces in Landing on next
-  // visit.
+  // Topbar mint: always visible while hosting. Context-aware — on
+  // view-loopback it copies the /?loopback URL (the iframe's URL — the
+  // only "link" that makes sense in that context); on real-hosting
+  // views it mints a fresh connection URL and copies that.
   document.getElementById('topbar-mint-url').addEventListener('click', async e => {
     const btn = e.currentTarget;
     const originalText = btn.textContent;
+    if (state.view === 'loopback') {
+      const url = window.location.origin + '/?loopback';
+      try { await navigator.clipboard.writeText(url); } catch (_) {}
+      const b = document.getElementById('generated-banner');
+      b.textContent = 'Loopback URL copied to your clipboard.';
+      b.hidden = false;
+      if (generatedBannerTimer) clearTimeout(generatedBannerTimer);
+      generatedBannerTimer = setTimeout(() => { b.hidden = true; }, 6000);
+      return;
+    }
     btn.disabled = true;
     btn.textContent = '…';
     try {
@@ -635,46 +661,66 @@
       btn.textContent = originalText;
     }
   });
-  document.getElementById('btn-enter-mi').addEventListener('click', async e => {
-    if (state.nmode === 'manager') {
-      setView('admin');
+  // HUD tabs: Loopback / Admin / Session. Loopback and the real-hosting
+  // tabs map to different server modes (mutually exclusive at the
+  // server). switchHostingTab handles the mode flip if needed and only
+  // setView()s after the server responds.
+  async function switchHostingTab(target) {
+    // target ∈ {'loopback', 'admin', 'session'}
+    const wantLoopback = target === 'loopback';
+    const haveLoopback = isLoopbackEngaged();
+    // Same mode — just a view change.
+    if (state.nmode === 'manager' && wantLoopback === haveLoopback) {
+      setView(target);
+      if (wantLoopback) showLoopbackIframe(); else hideLoopbackIframe();
       return;
     }
-    // Standalone → engage manager mode first, then pivot. Pre-set
-    // initialModeApplied so applyMode's first-paint heuristic doesn't
-    // overwrite our explicit setView('admin') with its session-count pick.
-    const btn = e.currentTarget;
-    const errEl = document.getElementById('start-error');
-    btn.disabled = true;
-    const originalText = btn.textContent;
-    btn.textContent = 'Engaging hosting…';
-    errEl.textContent = '';
-    state.initialModeApplied = true;
-    try {
-      const r = await csrfFetch('/api/mode/host', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      if (!r.ok) throw new Error((await r.text()).trim() || 'host failed');
-      setView('admin');
-    } catch (err) {
-      state.initialModeApplied = false;
-      errEl.textContent = err.message || String(err);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalText;
+    // Mode flip required. Real → loopback with connected sessions →
+    // confirm (we'll drop the real listener and any in-flight clients).
+    const realSessionCount = Array.from(state.sessions.keys())
+      .filter(fp => fp !== 'loopback').length;
+    if (wantLoopback && realSessionCount > 0) {
+      confirmAction(
+        'Switch to Loopback? Any connected clients will be disconnected.',
+        () => { flipMode(target); },
+      );
+      return;
     }
-  });
-  document.getElementById('btn-show-gcs').addEventListener('click', () => {
-    setView('landing');
-  });
-  document.getElementById('btn-show-admin').addEventListener('click', () => {
-    setView('admin');
-  });
-  document.getElementById('btn-show-session').addEventListener('click', () => {
-    setView('session');
-  });
+    flipMode(target);
+  }
+
+  async function flipMode(target) {
+    const wantLoopback = target === 'loopback';
+    state.flipping = true;
+    try {
+      state.initialModeApplied = true;
+      if (state.nmode === 'manager') {
+        await networkStandalone();
+      }
+      if (wantLoopback) {
+        const r = await csrfFetch('/api/mode/loopback', { method: 'POST' });
+        if (!r.ok) throw new Error((await r.text()).trim() || 'loopback failed');
+      } else {
+        const r = await csrfFetch('/api/mode/host', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        if (!r.ok) throw new Error((await r.text()).trim() || 'host failed');
+      }
+      setView(target);
+      if (wantLoopback) showLoopbackIframe(); else hideLoopbackIframe();
+    } catch (err) {
+      const msg = err.message || String(err);
+      document.getElementById('start-error').textContent = msg;
+    } finally {
+      state.flipping = false;
+    }
+  }
+
+  document.getElementById('btn-show-loopback').addEventListener('click', () => switchHostingTab('loopback'));
+  document.getElementById('btn-show-admin').addEventListener('click', () => switchHostingTab('admin'));
+  document.getElementById('btn-show-session').addEventListener('click', () => switchHostingTab('session'));
   document.getElementById('btn-show-info').addEventListener('click', e => {
     const on = !document.body.classList.contains('show-info');
     document.body.classList.toggle('show-info', on);
@@ -685,40 +731,6 @@
       'Stop hosting? Any connected clients will be disconnected.',
       () => { networkStandalone(); },
     );
-  });
-  // Loopback (dev): engage manager mode with an in-process synthetic
-  // client session, then split the window — /manage on the left,
-  // <iframe src="/?loopback"> on the right — so both sides of the
-  // protocol run in one window. No public IP, no cert pin, no
-  // port-forward — purely a development affordance.
-  document.getElementById('btn-loopback').addEventListener('click', async e => {
-    const btn = e.currentTarget;
-    const errEl = document.getElementById('start-error');
-    btn.disabled = true;
-    const originalText = btn.textContent;
-    btn.textContent = 'Engaging…';
-    errEl.textContent = '';
-    state.initialModeApplied = true;
-    try {
-      const r = await csrfFetch('/api/mode/loopback', { method: 'POST' });
-      if (!r.ok) throw new Error((await r.text()).trim() || 'loopback failed');
-      const loopURL = window.location.origin + '/?loopback';
-      // Hint stays populated as a manual-fallback (in case the iframe
-      // fails to load), but the CSS in body.loopback-split hides it.
-      document.getElementById('loopback-url').textContent = loopURL;
-      document.getElementById('loopback-hint').hidden = false;
-      const frame = document.getElementById('loopback-iframe');
-      frame.src = loopURL;
-      frame.hidden = false;
-      document.body.classList.add('loopback-split');
-      setView('admin');
-    } catch (err) {
-      state.initialModeApplied = false;
-      errEl.textContent = err.message || String(err);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalText;
-    }
   });
 
   // ---- Confirm overlay -----------------------------------------------
@@ -2057,6 +2069,27 @@
       if (r.ok) applyMode(await r.json());
     } catch (err) {
       console.warn('initial mode load failed:', err);
+    }
+    // /manage IS the hosting surface. If we're standalone, engage
+    // hosting now so the user lands directly in the Admin tab instead
+    // of an empty page. Errors surface via #start-error.
+    if (state.nmode === 'standalone') {
+      try {
+        state.initialModeApplied = true;
+        const r = await csrfFetch('/api/mode/host', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        if (!r.ok) {
+          state.initialModeApplied = false;
+          const msg = (await r.text()).trim() || 'host failed';
+          document.getElementById('start-error').textContent = msg;
+        }
+      } catch (err) {
+        state.initialModeApplied = false;
+        document.getElementById('start-error').textContent = err.message || String(err);
+      }
     }
     // Load the practitioner's saved config so the editor has something to
     // show the moment Hosting mode lights up. Run in parallel with the

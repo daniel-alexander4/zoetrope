@@ -770,20 +770,20 @@ body.mode-field .balls-only { display: none !important; }
    layout sticks across reloads. The drag interaction matches the
    playlist-item pattern in editor.js. */
 
-.card-grid.mi-only > .card > header {
+.card-grid > .card > header {
   cursor: grab;
   user-select: none;
 }
-.card-grid.mi-only > .card.dragging > header {
+.card-grid > .card.dragging > header {
   cursor: grabbing;
 }
-.card-grid.mi-only > .card.dragging {
+.card-grid > .card.dragging {
   opacity: 0.4;
 }
-.card-grid.mi-only > .card.drop-above {
+.card-grid > .card.drop-above {
   box-shadow: 0 -3px 0 0 var(--accent);
 }
-.card-grid.mi-only > .card.drop-below {
+.card-grid > .card.drop-below {
   box-shadow: 0 3px 0 0 var(--accent);
 }
 
@@ -1561,8 +1561,8 @@ body.page-manage {
   color: var(--base);
   border: 0;
   border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
+  padding: 8px 18px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -1625,114 +1625,32 @@ body.page-manage {
 }
 .generated-banner[hidden] { display: none; }
 
-/* /manage view toggle. The page lives between two states: Landing
-   (two CTAs — Generate / Enter MI) and MI (the operational card
-   grid). Body carries one of these classes; CSS hides the other
-   surface so the toggle is a single class swap with no JS layout work. */
-/* The MI grid splits internally into Admin (between-session work:
-   clients, library, identity, playlist editor) and Session (during-call
-   work: playlist editor, audio, file transfer). Body carries view-admin
-   or view-session inside the MI area; landing and client are top-level
-   peers. The grid container is shown in admin OR session and hidden in
-   landing / client; individual cards filter further via [data-views]. */
-body.view-landing .mi-only,
-body.view-landing .client-only,
-body.view-client .landing-only,
-body.view-client .mi-only,
-body.view-admin .landing-only,
+/* /manage view filter. The page lives between four views — view-loopback
+   (dev synthetic session, iframe overlay), view-admin (between-session
+   bookkeeping), view-session (live-session controls), view-client
+   (per-client detail page). Body carries view-<name>; per-card
+   data-views="..." declares the views each card appears in. Loopback
+   shares the session card set since the dev drives the synthetic
+   session through the same controls. */
+body.view-client .card-grid,
+body.view-loopback .client-only,
 body.view-admin .client-only,
-body.view-session .landing-only,
-body.view-session .client-only {
+body.view-session .client-only,
+body.view-client #mi-hud {
   display: none !important;
 }
-/* Per-card view filter: a card with data-views="admin" appears in
-   view-admin; "session" in view-session; "admin session" in both.
-   Cards missing the matching token in the current view are hidden. */
+body.view-loopback .card[data-views]:not([data-views~="session"]),
 body.view-admin .card[data-views]:not([data-views~="admin"]),
 body.view-session .card[data-views]:not([data-views~="session"]) {
   display: none !important;
 }
 
-/* Landing card: two-CTA entry to a hosting session. */
-#landing-card {
-  text-align: center;
-  max-width: 640px;
-  margin: 32px auto 0;
-  padding: 32px;
-}
-#landing-card h3 {
-  margin: 0 0 8px 0;
-  font-size: 20px;
-  font-weight: 600;
-}
-#landing-card p {
-  margin: 0 0 20px 0;
-  font-size: 13px;
-  color: var(--subtext);
-  line-height: 1.5;
-}
-.landing-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-.primary-cta {
-  background: var(--accent);
-  color: var(--base);
-  border: 0;
-  border-radius: 8px;
-  padding: 10px 24px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.primary-cta.secondary {
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--overlay);
-}
-.primary-cta:hover {
-  filter: brightness(1.08);
-}
-.primary-cta.secondary:hover {
-  background: var(--overlay);
-  filter: none;
-}
-.primary-cta:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 .start-error {
   margin-top: 12px;
   color: var(--danger);
   font-size: 12px;
   min-height: 1em;
 }
-
-/* Loopback hint surfaced after the dev-mode button engages — paste the
-   URL into a second tab to drive the client side. */
-.loopback-hint {
-  margin-top: 12px;
-  padding: 8px 10px;
-  background: color-mix(in oklab, var(--accent-2) 12%, var(--surface));
-  border: 1px solid var(--accent-2);
-  border-radius: 6px;
-  font-size: 12px;
-  color: var(--text);
-}
-.loopback-hint code {
-  display: block;
-  margin-top: 4px;
-  padding: 4px 6px;
-  background: var(--base);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-  word-break: break-all;
-}
-.loopback-hint[hidden] { display: none; }
 
 /* Loopback split-pane (dev mode). When body.loopback-split is on, /manage
    occupies the left half of the viewport and a same-origin iframe loads
@@ -1757,7 +1675,6 @@ body.loopback-split { padding-right: 50vw; }
 body.loopback-split #loopback-iframe { display: block; }
 body.loopback-split #mi-hud { right: 50vw; }
 body.loopback-split #confirm-overlay:not([hidden]) { right: 50vw; }
-body.loopback-split #loopback-hint { display: none; }
 
 /* MI card grid: Library (left) + Active playlist editor (right) at
    wide widths, stacking on narrow. Library is the lighter card so it
@@ -1785,10 +1702,10 @@ body.view-admin.show-info #identity-panel {
   grid-column: 1 / -1;
 }
 
-/* MI HUD: sticky strip at the bottom of the MI view. A1 carries the
-   "Go to GCS" and "Info" buttons; A2 will populate it with the
-   connection-status pill, modality pills, and the modality-filtered
-   playlist picker. The .mi-only class hides it in Landing view. */
+/* MI HUD: sticky strip at the bottom of the hosting view. Three tabs
+   (Loopback / Admin / Session) select the active hosting view; Info
+   toggles the identity card. Hidden in view-client via the rule near
+   the top of the file. */
 #mi-hud {
   position: fixed;
   bottom: 0;
