@@ -13,8 +13,11 @@
   const state = {
     nmode: 'standalone',
     sessions: new Map(), // fp → { node, snap }
-    view: 'landing',     // 'landing' | 'mi'
+    view: 'landing',     // 'landing' | 'mi' | 'client'
     initialModeApplied: false,
+    clientID: null,      // which client view-client is currently showing
+    clients: [],         // cached summary list (refreshed on entering MI)
+    notesTimer: null,    // autosave debounce for client-notes
   };
 
   async function csrfFetch(path, options = {}) {
@@ -52,12 +55,16 @@
   // their next MI visit.
   function setView(view) {
     state.view = view;
-    document.body.classList.remove('view-landing', 'view-mi');
+    document.body.classList.remove('view-landing', 'view-mi', 'view-client');
     document.body.classList.add('view-' + view);
     if (view !== 'mi') {
       document.body.classList.remove('show-info');
       const info = document.getElementById('btn-show-info');
       if (info) info.setAttribute('aria-pressed', 'false');
+    }
+    if (view !== 'client') {
+      // Drop the per-view client cursor so re-entering Clients starts fresh.
+      state.clientID = null;
     }
   }
 
@@ -93,6 +100,9 @@
       stopBtn.hidden = false;
       const audioCard = document.getElementById('audio-card');
       if (audioCard) audioCard.hidden = false;
+      const clientsCard = document.getElementById('clients-card');
+      if (clientsCard) clientsCard.hidden = false;
+      refreshClientsList();
       document.getElementById('practitioner-fp').dataset.full = snap.practitioner_fp || '';
       document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
       refreshIdentityDisplay();
@@ -113,6 +123,8 @@
       stopBtn.hidden = true;
       const audioCard = document.getElementById('audio-card');
       if (audioCard) audioCard.hidden = true;
+      const clientsCard = document.getElementById('clients-card');
+      if (clientsCard) clientsCard.hidden = true;
       // Leaving manager → hang up any in-flight call so we don't hold the
       // mic open or leak a live peer connection.
       if (window.zoetropeAudio && window.zoetropeAudio.getState().state !== 'idle') {
@@ -566,6 +578,187 @@
   });
   // Initial render so the card shows the idle hint as soon as manager mode lights up.
   renderAudioCard(window.zoetropeAudio.getState());
+
+  // ---- Client manager (Clients card + view-client) ------------------
+
+  async function refreshClientsList() {
+    try {
+      const r = await fetch('/api/clients', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      state.clients = await r.json();
+      renderClientsList();
+    } catch (err) {
+      console.warn('clients list:', err);
+    }
+  }
+
+  function renderClientsList() {
+    const list = document.getElementById('clients-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!state.clients.length) {
+      const li = document.createElement('li');
+      li.className = 'client-empty';
+      li.textContent = 'No clients yet — click "+ New".';
+      list.appendChild(li);
+      return;
+    }
+    for (const c of state.clients) {
+      const li = document.createElement('li');
+      li.className = 'client-row';
+      const name = document.createElement('span');
+      name.className = 'client-name';
+      name.textContent = c.name;
+      const count = document.createElement('span');
+      count.className = 'client-count';
+      count.textContent = c.sessionCount + ' session' + (c.sessionCount === 1 ? '' : 's');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.textContent = 'Open';
+      open.addEventListener('click', () => openClientDetail(c.id));
+      li.appendChild(name);
+      li.appendChild(count);
+      li.appendChild(open);
+      list.appendChild(li);
+    }
+  }
+
+  document.getElementById('btn-new-client').addEventListener('click', () => {
+    const row = document.getElementById('new-client-row');
+    row.hidden = false;
+    const inp = document.getElementById('new-client-name');
+    inp.value = '';
+    inp.focus();
+  });
+  document.getElementById('btn-new-client-cancel').addEventListener('click', () => {
+    document.getElementById('new-client-row').hidden = true;
+  });
+  document.getElementById('btn-new-client-ok').addEventListener('click', async () => {
+    const name = document.getElementById('new-client-name').value.trim();
+    if (!name) return;
+    try {
+      const r = await csrfFetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
+      document.getElementById('new-client-row').hidden = true;
+      await refreshClientsList();
+    } catch (err) {
+      alert('Create failed: ' + err.message);
+    }
+  });
+  document.getElementById('new-client-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-new-client-ok').click(); }
+    else if (e.key === 'Escape') { e.preventDefault(); document.getElementById('btn-new-client-cancel').click(); }
+  });
+
+  async function openClientDetail(id) {
+    try {
+      const r = await fetch('/api/clients/' + encodeURIComponent(id), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const view = await r.json();
+      state.clientID = id;
+      setView('client');
+      document.getElementById('client-detail-name').textContent = view.name;
+      document.getElementById('client-notes').value = view.notes || '';
+      document.getElementById('client-generated-url').hidden = true;
+      document.getElementById('client-generated-url').textContent = '';
+      renderClientSessions(view.sessions || []);
+    } catch (err) {
+      alert('Open client failed: ' + err.message);
+    }
+  }
+
+  function renderClientSessions(sessions) {
+    const list = document.getElementById('client-sessions-list');
+    list.innerHTML = '';
+    if (!sessions.length) {
+      const li = document.createElement('li');
+      li.className = 'session-empty';
+      li.textContent = 'No sessions yet.';
+      list.appendChild(li);
+      return;
+    }
+    for (const s of sessions) {
+      const li = document.createElement('li');
+      li.className = 'session-row';
+      const started = new Date(s.startedAt);
+      const date = started.toLocaleDateString();
+      const time = started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const dur = s.durationSec > 0 ? formatDuration(s.durationSec) : (s.endedAt ? '0s' : 'in progress');
+      li.textContent = `${date} ${time} · ${dur}`;
+      list.appendChild(li);
+    }
+  }
+
+  function formatDuration(sec) {
+    if (sec < 60) return sec + 's';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    return mm ? `${h}h ${mm}m` : `${h}h`;
+  }
+
+  // Notes autosave: 400ms debounce after the last keystroke. Saves the full
+  // textarea content — the server overwrites notes.md atomically.
+  document.getElementById('client-notes').addEventListener('input', () => {
+    if (!state.clientID) return;
+    clearTimeout(state.notesTimer);
+    state.notesTimer = setTimeout(saveClientNotes, 400);
+  });
+  async function saveClientNotes() {
+    if (!state.clientID) return;
+    const notes = document.getElementById('client-notes').value;
+    try {
+      await csrfFetch('/api/clients/' + encodeURIComponent(state.clientID) + '/notes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes }),
+      });
+    } catch (err) {
+      console.warn('notes save:', err);
+    }
+  }
+
+  document.getElementById('btn-back-to-mi').addEventListener('click', async () => {
+    // Flush any pending autosave before leaving.
+    clearTimeout(state.notesTimer);
+    if (state.clientID) await saveClientNotes();
+    setView('mi');
+    refreshClientsList();
+  });
+
+  document.getElementById('btn-client-generate').addEventListener('click', async () => {
+    if (!state.clientID) return;
+    const btn = document.getElementById('btn-client-generate');
+    const out = document.getElementById('client-generated-url');
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Generating…';
+    out.hidden = true;
+    try {
+      const r = await csrfFetch('/api/sessions/quickstart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: state.clientID }),
+      });
+      if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
+      const data = await r.json();
+      out.textContent = data.url;
+      out.hidden = false;
+      navigator.clipboard.writeText(data.url).catch(() => {});
+    } catch (err) {
+      out.textContent = 'Generate failed: ' + err.message;
+      out.hidden = false;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
 
   // ---- Init -----------------------------------------------------------
 

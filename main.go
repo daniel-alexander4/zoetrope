@@ -38,9 +38,18 @@ func main() {
 		log.Fatalf("init config: %v", err)
 	}
 
+	clientsRoot, err := clientsRootDir(appName)
+	if err != nil {
+		log.Fatalf("locate clients dir: %v", err)
+	}
+	clients, err := newClientsStore(clientsRoot)
+	if err != nil {
+		log.Fatalf("init clients store: %v", err)
+	}
+
 	hb := &heartbeat{}
 	bus := newEventBus()
-	modes := newModeState(appName, bus, store)
+	modes := newModeState(appName, bus, store, clients)
 	mux, err := newRouter(store, hb, bus, modes)
 	if err != nil {
 		log.Fatalf("router: %v", err)

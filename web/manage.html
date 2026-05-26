@@ -59,6 +59,21 @@
          body.show-info reveals it; otherwise it stays hidden. Future
          audio / file-transfer / other panels join as additional cards. -->
     <div class="card-grid mi-only">
+      <section id="clients-card" class="card" hidden>
+        <header class="section-header">
+          <h3>Clients</h3>
+          <button id="btn-new-client" type="button" class="regen">+ New</button>
+        </header>
+        <p class="section-hint">
+          Local records. Practitioner-owned — never synced or transmitted.
+        </p>
+        <ol id="clients-list" class="clients-list"></ol>
+        <div id="new-client-row" class="new-client-row" hidden>
+          <input type="text" id="new-client-name" placeholder="Client name">
+          <button id="btn-new-client-ok" type="button" class="regen">Create</button>
+          <button id="btn-new-client-cancel" type="button" class="regen">Cancel</button>
+        </div>
+      </section>
       <section id="library-card" class="card" hidden>
         <header class="section-header">
           <h3>Library</h3>
@@ -180,6 +195,28 @@
         </div>
       </section>
     </div>
+
+    <!-- Client detail view (view-client). Shown when the practitioner
+         clicks Open on a Clients-card row. Holds the name header, the
+         notes textarea (autosaved to notes.md), and the session timeline.
+         "🔗 Generate URL" mints a connection string bound to this
+         client so disconnect-time logging knows who it was. -->
+    <section id="client-detail" class="card client-only" hidden>
+      <header class="client-detail-header">
+        <button id="btn-back-to-mi" type="button" class="ghost-toggle">← Back</button>
+        <h3 id="client-detail-name"></h3>
+        <button id="btn-client-generate" type="button" class="regen">🔗 Generate URL</button>
+      </header>
+      <p class="section-hint">
+        Notes are local to this machine. You own retention and consent.
+      </p>
+      <textarea id="client-notes" class="client-notes" placeholder="Notes…"></textarea>
+      <div class="client-sessions">
+        <h4>Sessions</h4>
+        <ol id="client-sessions-list" class="sessions-list"></ol>
+      </div>
+      <div id="client-generated-url" class="client-generated-url" hidden></div>
+    </section>
 
     <!-- MI HUD: bottom strip. A1 carries two buttons — Go to GCS (back to
          Landing for URL minting / session management) and Info (toggles

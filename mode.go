@@ -96,6 +96,14 @@ type modeState struct {
 	inProgress map[string]*transferRX
 	inbox      map[string]*inboxEntry
 
+	// Client manager (see clients.go). Bindings live alongside the session
+	// table: sessionClients maps cert-fp → client-id for sessions that were
+	// minted "for client X"; activeSessionLogs maps cert-fp → session-log-id
+	// for the currently-in-progress log entry so disconnect can finalize it.
+	clients           *clientsStore
+	sessionClients    map[string]string // cert fp → client id
+	activeSessionLogs map[string]string // cert fp → session log id
+
 	// Bookkeeping
 	enteredAt       time.Time
 	lastClientEvent time.Time
@@ -105,15 +113,18 @@ type modeState struct {
 	store   *configStore // for pushing current config to clients on connect
 }
 
-func newModeState(appName string, bus *eventBus, store *configStore) *modeState {
+func newModeState(appName string, bus *eventBus, store *configStore, clients *clientsStore) *modeState {
 	return &modeState{
-		current:    modeStandalone,
-		sessions:   make(map[string]*session),
-		inProgress: make(map[string]*transferRX),
-		inbox:      make(map[string]*inboxEntry),
-		appName:    appName,
-		bus:        bus,
-		store:      store,
+		current:           modeStandalone,
+		sessions:          make(map[string]*session),
+		inProgress:        make(map[string]*transferRX),
+		inbox:             make(map[string]*inboxEntry),
+		clients:           clients,
+		sessionClients:    make(map[string]string),
+		activeSessionLogs: make(map[string]string),
+		appName:           appName,
+		bus:               bus,
+		store:             store,
 	}
 }
 
@@ -367,8 +378,19 @@ func (m *modeState) Standalone() {
 	listener := m.listener
 	clientCancel := m.clientCancel
 	clientConn := m.clientConn
+	// Snapshot in-flight session logs so we can finalize them after the
+	// disconnect path has had a chance to fire. After the map is cleared
+	// below, the deferred read-loop exits will find empty maps and skip.
+	pendingLogs := make(map[string]string, len(m.activeSessionLogs))
+	for fp, logID := range m.activeSessionLogs {
+		if cid, ok := m.sessionClients[fp]; ok {
+			pendingLogs[cid] = logID
+		}
+	}
 
 	m.sessions = make(map[string]*session)
+	m.sessionClients = make(map[string]string)
+	m.activeSessionLogs = make(map[string]string)
 	m.httpServer = nil
 	m.listener = nil
 	m.clientConn = nil
@@ -381,6 +403,16 @@ func (m *modeState) Standalone() {
 	m.current = modeStandalone
 	m.enteredAt = time.Now()
 	m.mu.Unlock()
+
+	// Best-effort finalize any logs whose disconnect path didn't get to fire
+	// (e.g., the practitioner clicked Stop Hosting while a call was live).
+	if m.clients != nil {
+		for cid, logID := range pendingLogs {
+			if err := m.clients.EndSession(cid, logID); err != nil {
+				log.Printf("client log end on standalone (client %s, log %s): %v", cid, logID, err)
+			}
+		}
+	}
 
 	// Close everything outside the mutex to avoid deadlocking against
 	// in-flight WS handlers that need the lock.
@@ -409,8 +441,9 @@ func (m *modeState) Standalone() {
 // Quickstart is the one-button "Generate connection string" flow: detect
 // the public IP, enter manager mode (if not already), and mint a session
 // URL — all in one round trip. The port is fixed; the practitioner
-// never sees or types a number.
-func (m *modeState) Quickstart() (string, sessionSnapshot, error) {
+// never sees or types a number. clientID, when non-empty, binds the
+// generated session to that client (see CreateSession).
+func (m *modeState) Quickstart(clientID string) (string, sessionSnapshot, error) {
 	if m.Mode() != modeManager {
 		ip, err := detectPublicIP(context.Background())
 		if err != nil {
@@ -421,7 +454,7 @@ func (m *modeState) Quickstart() (string, sessionSnapshot, error) {
 			return "", sessionSnapshot{}, err
 		}
 	}
-	return m.CreateSession()
+	return m.CreateSession(clientID)
 }
 
 // detectPublicIP asks a public IP-echo service for our externally-visible
@@ -466,7 +499,12 @@ func trimScheme(endpoint string) string {
 
 // ---- Manager: session creation + verb forwarding --------------------
 
-func (m *modeState) CreateSession() (string, sessionSnapshot, error) {
+// CreateSession mints a fresh ephemeral session cert + URL. When clientID
+// is non-empty, the session is bound to that client and its lifecycle (WS
+// pair → BeginSession, WS disconnect → EndSession) is logged into the
+// client's record on disk. An empty clientID creates an unattached session
+// (current behavior, no logging).
+func (m *modeState) CreateSession(clientID string) (string, sessionSnapshot, error) {
 	m.mu.Lock()
 	if m.current != modeManager {
 		m.mu.Unlock()
@@ -475,6 +513,12 @@ func (m *modeState) CreateSession() (string, sessionSnapshot, error) {
 	practitioner := m.practitioner
 	publicEP := m.publicEP
 	m.mu.Unlock()
+
+	if clientID != "" {
+		if m.clients == nil || !m.clients.Exists(clientID) {
+			return "", sessionSnapshot{}, fmt.Errorf("unknown client_id %q", clientID)
+		}
+	}
 
 	sid, err := generateSessionIdentity()
 	if err != nil {
@@ -506,6 +550,9 @@ func (m *modeState) CreateSession() (string, sessionSnapshot, error) {
 
 	m.mu.Lock()
 	m.sessions[fp] = sess
+	if clientID != "" {
+		m.sessionClients[fp] = clientID
+	}
 	m.mu.Unlock()
 
 	snap := sessionSnapshot{
@@ -522,6 +569,11 @@ func (m *modeState) RemoveSession(fp string) error {
 	sess, ok := m.sessions[fp]
 	if ok {
 		delete(m.sessions, fp)
+		delete(m.sessionClients, fp)
+		// If a log entry is still open (peer never disconnected before this
+		// remove), the handleManagerWS deferred path will close the WS, the
+		// read loop will exit, and the disconnect path above will end it.
+		// No work to do here.
 	}
 	m.mu.Unlock()
 	if !ok {
@@ -655,7 +707,22 @@ func (m *modeState) handleManagerWS(w http.ResponseWriter, r *http.Request) {
 
 	m.mu.Lock()
 	m.lastClientEvent = time.Now()
+	clientID := m.sessionClients[fp]
 	m.mu.Unlock()
+
+	// If the session was minted "for client X", open a session-log entry.
+	// Disconnect (below) finalizes it. Failure is non-fatal — log and carry
+	// on; the practitioner still gets a working session.
+	if clientID != "" && m.clients != nil {
+		if logID, err := m.clients.BeginSession(clientID, fp); err != nil {
+			log.Printf("client log begin (session %s, client %s): %v", fp[:8], clientID, err)
+		} else {
+			m.mu.Lock()
+			m.activeSessionLogs[fp] = logID
+			m.mu.Unlock()
+		}
+	}
+
 	m.bus.Publish("session-connected", sessionSnapshot{
 		Fingerprint: fp,
 		Connected:   true,
@@ -689,7 +756,15 @@ func (m *modeState) handleManagerWS(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.lastClientEvent = time.Now()
 	stillRegistered := m.sessions[fp] != nil
+	logID := m.activeSessionLogs[fp]
+	logClient := m.sessionClients[fp]
+	delete(m.activeSessionLogs, fp)
 	m.mu.Unlock()
+	if logID != "" && logClient != "" && m.clients != nil {
+		if err := m.clients.EndSession(logClient, logID); err != nil {
+			log.Printf("client log end (session %s, client %s): %v", fp[:8], logClient, err)
+		}
+	}
 	if stillRegistered {
 		m.bus.Publish("session-disconnected", map[string]any{"fingerprint": fp})
 	}

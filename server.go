@@ -148,7 +148,8 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 	}))
 
 	mux.HandleFunc("POST /api/sessions", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
-		url, snap, err := modes.CreateSession()
+		clientID := readOptionalClientID(r)
+		url, snap, err := modes.CreateSession(clientID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -160,7 +161,8 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 		})
 	}))
 	mux.HandleFunc("POST /api/sessions/quickstart", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
-		url, snap, err := modes.Quickstart()
+		clientID := readOptionalClientID(r)
+		url, snap, err := modes.Quickstart(clientID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -248,7 +250,89 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 
 	mux.HandleFunc("GET /api/session/events", bus.HandleSSE)
 
+	// ---- Client manager endpoints ----
+	// clients.go owns the on-disk schema; these handlers just shape the
+	// JSON for the UI.
+
+	mux.HandleFunc("GET /api/clients", func(w http.ResponseWriter, r *http.Request) {
+		list, err := modes.clients.List()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if list == nil {
+			list = []ClientSummary{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(list)
+	})
+	mux.HandleFunc("POST /api/clients", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		rec, err := modes.clients.Create(body.Name)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rec)
+	}))
+	mux.HandleFunc("GET /api/clients/{id}", func(w http.ResponseWriter, r *http.Request) {
+		view, err := modes.clients.Get(r.PathValue("id"))
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(view)
+	})
+	mux.HandleFunc("PUT /api/clients/{id}/notes", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Notes string `json:"notes"`
+		}
+		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4*1024*1024))
+		if err != nil {
+			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := modes.clients.SaveNotes(r.PathValue("id"), body.Notes); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
 	return mux, nil
+}
+
+// readOptionalClientID decodes a {client_id} body from a session-create
+// request. Tolerates an empty body (current behavior — no binding).
+func readOptionalClientID(r *http.Request) string {
+	if r.Body == nil {
+		return ""
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 4*1024))
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	var body struct {
+		ClientID string `json:"client_id"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return ""
+	}
+	return body.ClientID
 }
 
 // handleOutboundTransfer reads a raw file body up to the local MaxTransferBytes

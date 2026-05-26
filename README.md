@@ -223,6 +223,38 @@ below); `audio-offer`, `audio-answer`, `audio-ice`, `audio-bye` (see Voice
 call). Every frame carries `pv: 1` so future revisions can negotiate
 cleanly.
 
+### Client records
+
+The practitioner can keep persistent records of their clients — a name,
+free-form notes, and a session log per client. From `/manage` in MI view,
+the **Clients** card lists existing clients and lets the practitioner add
+new ones. Opening a client surfaces a notes textarea (autosaved) and a
+timeline of past sessions with date / time / duration.
+
+"🔗 Generate URL" from the client detail view mints a connection string
+*bound to that client*. When the client connects, a session-log entry is
+opened automatically; when they disconnect, it's finalized with the
+duration. Connection strings minted from Landing (the standalone "+"
+button) are unattached and don't log.
+
+Records live under `<user-config>/zoetrope/clients/<slug>/`:
+
+```
+clients/
+  alice-7f3a2/
+    client.json    {id, name, createdAt}
+    notes.md       rolling notes; practitioner-owned, no auto-edits
+    sessions/
+      2026-05-25T19-32-00/
+        meta.json  {id, startedAt, endedAt, durationSec, sessionCertFP}
+```
+
+Directories are mode `0700`, files `0600`. **No encryption at rest in v1**
+— relies on the host OS's user-level file permissions. The practitioner
+is responsible for retention, consent, and compliance with their
+jurisdiction; nothing about this feature is synced or transmitted
+off-device.
+
 ### Voice call
 
 Either side can place a voice call across an active session. The 📞
@@ -320,6 +352,7 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 ├── link.go         WS transport, mTLS pinning, frame I/O
 ├── mode.go         standalone / manager / client transitions + sessions
 ├── transfer.go     file-transfer protocol (chunking, inbox, caps)
+├── clients.go      client + session records (on-disk schema, atomic writes)
 ├── bridge.go       SSE bus between Go and browser tabs
 ├── web/            embedded UI (HTML/CSS/JS)
 │   └── audio.js    SoT for the in-browser WebRTC voice-call state machine
