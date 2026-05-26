@@ -391,6 +391,13 @@
     </div>
   </div>
 
+  <!-- Loopback dev split-pane: when body.loopback-split is on, the
+       practitioner's /manage view occupies the left half and this iframe
+       loads /?loopback in the right half so both halves of the protocol
+       can be exercised from one window. Same-origin so SSE + getUserMedia
+       inside the iframe just work. -->
+  <iframe id="loopback-iframe" title="Loopback client view" allow="microphone; autoplay" hidden></iframe>
+
   <script src="modal.js"></script>
   <script src="editor.js"></script>
   <script src="patterns.js"></script>

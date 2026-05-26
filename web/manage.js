@@ -185,6 +185,13 @@
       state.sessions.clear();
       document.getElementById('sessions-list').innerHTML = '';
       document.getElementById('start-error').textContent = '';
+      // Standalone tears the synthetic loopback session down — the
+      // split-pane iframe goes with it.
+      document.body.classList.remove('loopback-split');
+      const frame = document.getElementById('loopback-iframe');
+      if (frame) { frame.src = ''; frame.hidden = true; }
+      const hint = document.getElementById('loopback-hint');
+      if (hint) hint.hidden = true;
       // Returning from manager → standalone always lands on Landing.
       setView('landing');
     }
@@ -680,9 +687,10 @@
     );
   });
   // Loopback (dev): engage manager mode with an in-process synthetic
-  // client session, then surface the /?loopback URL the practitioner
-  // pastes into a second tab to drive the client side. No public IP,
-  // no cert pin, no port-forward — purely a development affordance.
+  // client session, then split the window — /manage on the left,
+  // <iframe src="/?loopback"> on the right — so both sides of the
+  // protocol run in one window. No public IP, no cert pin, no
+  // port-forward — purely a development affordance.
   document.getElementById('btn-loopback').addEventListener('click', async e => {
     const btn = e.currentTarget;
     const errEl = document.getElementById('start-error');
@@ -694,11 +702,15 @@
     try {
       const r = await csrfFetch('/api/mode/loopback', { method: 'POST' });
       if (!r.ok) throw new Error((await r.text()).trim() || 'loopback failed');
-      const hint = document.getElementById('loopback-hint');
-      const url = document.getElementById('loopback-url');
       const loopURL = window.location.origin + '/?loopback';
-      url.textContent = loopURL;
-      hint.hidden = false;
+      // Hint stays populated as a manual-fallback (in case the iframe
+      // fails to load), but the CSS in body.loopback-split hides it.
+      document.getElementById('loopback-url').textContent = loopURL;
+      document.getElementById('loopback-hint').hidden = false;
+      const frame = document.getElementById('loopback-iframe');
+      frame.src = loopURL;
+      frame.hidden = false;
+      document.body.classList.add('loopback-split');
       setView('admin');
     } catch (err) {
       state.initialModeApplied = false;

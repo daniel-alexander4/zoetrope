@@ -1734,6 +1734,31 @@ body.view-session .card[data-views]:not([data-views~="session"]) {
 }
 .loopback-hint[hidden] { display: none; }
 
+/* Loopback split-pane (dev mode). When body.loopback-split is on, /manage
+   occupies the left half of the viewport and a same-origin iframe loads
+   /?loopback in the right half — single-window protocol exercise. body's
+   padding-right pushes flow content into the left half; fixed-position
+   chrome (#mi-hud, #confirm-overlay) is constrained with right: 50vw so
+   it doesn't sprawl across the iframe. The in-page hint is redundant
+   once the iframe is the client and is hidden in this mode. */
+#loopback-iframe {
+  display: none;
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 50vw;
+  height: 100vh;
+  border: 0;
+  border-left: 1px solid var(--overlay);
+  background: var(--base);
+  z-index: 40;
+}
+body.loopback-split { padding-right: 50vw; }
+body.loopback-split #loopback-iframe { display: block; }
+body.loopback-split #mi-hud { right: 50vw; }
+body.loopback-split #confirm-overlay:not([hidden]) { right: 50vw; }
+body.loopback-split #loopback-hint { display: none; }
+
 /* MI card grid: Library (left) + Active playlist editor (right) at
    wide widths, stacking on narrow. Library is the lighter card so it
    gets the slimmer column; the editor needs the room for globals,
