@@ -250,6 +250,45 @@
     }
   }
 
+  // Firewall-hint nudge: if a session URL has been minted for this long
+  // without anyone connecting, the most likely cause is a local firewall
+  // blocking inbound on 38130 (router-NAT a distant second). Halfway
+  // through the URL's 10-minute lifetime so the hint still leaves time
+  // to act on it. Compared against created_at so a page reload doesn't
+  // restart the timer.
+  const FIREWALL_HINT_MS = 5 * 60 * 1000;
+
+  function armFirewallHint(entry) {
+    if (entry.everConnected || entry.firewallTimer) return;
+    if (entry.snap && entry.snap.connected) return;
+    const created = entry.snap && entry.snap.created_at
+      ? new Date(entry.snap.created_at).getTime()
+      : Date.now();
+    const elapsed = Date.now() - created;
+    if (elapsed >= FIREWALL_HINT_MS) {
+      showFirewallHint(entry);
+      return;
+    }
+    entry.firewallTimer = setTimeout(() => {
+      entry.firewallTimer = null;
+      if (!entry.everConnected) showFirewallHint(entry);
+    }, FIREWALL_HINT_MS - elapsed);
+  }
+
+  function clearFirewallHint(entry) {
+    if (entry.firewallTimer) {
+      clearTimeout(entry.firewallTimer);
+      entry.firewallTimer = null;
+    }
+    const hint = entry.node.querySelector('.session-firewall-hint');
+    if (hint) hint.hidden = true;
+  }
+
+  function showFirewallHint(entry) {
+    const hint = entry.node.querySelector('.session-firewall-hint');
+    if (hint) hint.hidden = false;
+  }
+
   function addSessionToList(snap, url) {
     const existing = state.sessions.get(snap.fingerprint);
     if (existing) {
@@ -266,16 +305,25 @@
     statusEl.dataset.status = snap.connected ? 'connected' : 'waiting';
     if (url) node.querySelector('.session-url').value = url;
     wireSessionNode(node, snap.fingerprint);
+    wireFocusOnSessionNode(node, snap.fingerprint);
     list.appendChild(node);
-    state.sessions.set(snap.fingerprint, { node, snap });
+    const entry = {
+      node, snap,
+      everConnected: !!snap.connected,
+      firewallTimer: null,
+      connectedAt: snap.connected ? performance.now() : null,
+    };
+    state.sessions.set(snap.fingerprint, entry);
     // Apply the disable-on-disconnect state for the freshly-rendered
     // controls so a waiting card shows its transport row grayed out.
     setSessionConnected(node, !!snap.connected);
+    armFirewallHint(entry);
   }
 
   function removeSessionFromList(fp) {
     const entry = state.sessions.get(fp);
     if (!entry) return;
+    clearFirewallHint(entry);
     entry.node.remove();
     state.sessions.delete(fp);
   }
@@ -292,6 +340,13 @@
     entry.snap.connected = (status === 'connected');
     setSessionConnected(entry.node, status === 'connected');
     updateFilesSendState();
+    if (status === 'connected') {
+      // First successful pair proves the route works; the firewall hint
+      // is suppressed for this session for its remaining lifetime even
+      // after a later disconnect (disconnect != firewall blocking).
+      entry.everConnected = true;
+      clearFirewallHint(entry);
+    }
   }
 
   // setSessionConnected toggles the disabled state of every transport-style
@@ -345,7 +400,16 @@
     const idx = payload.item_idx ?? 0;
     const rep = payload.repeat_idx ?? 0;
     const pat = payload.pattern || '?';
-    let detail = `${playing} item ${idx + 1}, rep ${rep + 1}, pattern ${pat}`;
+    // Look up the item's repeat-total + percent through-the-cycle from
+    // the manager's own config + the snapshot's `t`. Falls back to "rep N"
+    // when config isn't loaded yet or item_idx is out of range.
+    let repText = `rep ${rep + 1}`;
+    const playlists = state.config?.playlists || [];
+    const active = playlists.find(p => p.name === state.config?.activePlaylist) || playlists[0];
+    const item = active?.items?.[idx];
+    if (item && item.repeats) repText = `rep ${rep + 1}/${item.repeats}`;
+    const pct = Math.round(((payload.t ?? 0) % 1) * 100);
+    let detail = `${playing} item ${idx + 1}, ${repText} · ${pct}%, pattern ${pat}`;
     if (payload.step_count) {
       const step = (payload.step_idx ?? 0) + 1;
       detail += `, step ${step}/${payload.step_count}`;
@@ -659,10 +723,14 @@
       try {
         const fp = JSON.parse(e.data).fingerprint;
         updateSessionStatus(fp, 'connected');
+        // Start (or restart on rejoin) the per-card uptime counter so the
+        // practitioner sees "connected for 8m 42s." Rejoin treats this as
+        // a fresh counter — see the timer block below for the rationale.
+        const entry = state.sessions.get(fp);
+        if (entry) entry.connectedAt = performance.now();
         // BeginSession just migrated intake.md → SessionRecord.PreNotes.
         // If the prep card was showing that client's intake, the buffer
         // is now empty on disk — re-fetch so the textarea reflects that.
-        const entry = state.sessions.get(fp);
         if (entry && entry.snap && entry.snap.client_id && entry.snap.client_id === nextPrepClientID) {
           loadIntakeFor(nextPrepClientID);
         }
@@ -670,9 +738,18 @@
     });
     es.addEventListener('session-disconnected', e => {
       try {
-        const fp = JSON.parse(e.data).fingerprint;
-        updateSessionStatus(fp, 'waiting');
+        const ev = JSON.parse(e.data);
+        const fp = ev.fingerprint;
+        // Server tells us whether the peer closed cleanly ("left") or the
+        // WS dropped ("dropped"). Fall back to "waiting" for older events
+        // (or empty reason) so the pill never lands in an unknown state.
+        const status = ev.reason === 'left' || ev.reason === 'dropped' ? ev.reason : 'waiting';
+        updateSessionStatus(fp, status);
         dropMirrorSnapshot(fp);
+        // Freeze the uptime display where it is; the timer's render loop
+        // stops counting once connectedAt is null.
+        const entry = state.sessions.get(fp);
+        if (entry) entry.connectedAt = null;
       } catch (err) {}
     });
     es.addEventListener('session-removed', e => {
@@ -1827,6 +1904,77 @@
 
     requestAnimationFrame(mirrorTick);
   }
+
+  // ---- Focused session + keyboard shortcuts -------------------------
+  //
+  // Clicking inside a session card sets it as the keyboard-shortcut
+  // target. Space toggles play/pause; ← / → step pattern or position
+  // depending on the snapshot's pattern type. Bails when the user is
+  // typing in an input/select/textarea so typing the session URL or a
+  // text field doesn't move the ball.
+  state.focusedSessionFP = null;
+  function setFocusedSession(fp) {
+    state.focusedSessionFP = fp;
+    for (const [otherFp, entry] of state.sessions) {
+      entry.node.classList.toggle('focused', otherFp === fp);
+    }
+  }
+  function wireFocusOnSessionNode(node, fp) {
+    node.addEventListener('mousedown', () => setFocusedSession(fp));
+  }
+  document.addEventListener('keydown', e => {
+    if (!state.focusedSessionFP) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    const fp = state.focusedSessionFP;
+    const entry = state.sessions.get(fp);
+    if (!entry || !entry.snap.connected) return;
+    const snap = state.mirrorSnapshots.get(fp);
+    const isSeq = snap?.pattern === 'position-sequence';
+    let verb = null;
+    if (e.code === 'Space') {
+      verb = snap?.playing ? 'pause' : 'play';
+    } else if (e.code === 'ArrowLeft') {
+      verb = isSeq ? 'back-position' : 'back';
+    } else if (e.code === 'ArrowRight') {
+      verb = isSeq ? 'advance-position' : 'advance';
+    }
+    if (verb) {
+      e.preventDefault();
+      sendSessionVerb(fp, { type: verb });
+    }
+  });
+
+  // ---- Session uptime timer -----------------------------------------
+  //
+  // One global setInterval at 1 Hz walks every session card and renders
+  // elapsed time since the latest connect. Disconnects null out
+  // connectedAt so the display freezes at the last value rather than
+  // continuing to count.
+  function formatUptime(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60), rs = s % 60;
+    if (m < 60) return rs ? `${m}m ${rs}s` : `${m}m`;
+    const h = Math.floor(m / 60), rm = m % 60;
+    return rm ? `${h}h ${rm}m` : `${h}h`;
+  }
+  setInterval(() => {
+    const now = performance.now();
+    for (const [, entry] of state.sessions) {
+      const upEl = entry.node.querySelector('.session-uptime');
+      if (!upEl) continue;
+      if (entry.connectedAt) {
+        upEl.textContent = formatUptime(now - entry.connectedAt);
+        upEl.hidden = false;
+      }
+      // If disconnected, leave the last-rendered value in place (frozen).
+      // Hide entirely only if we've never connected.
+      else if (!upEl.textContent) {
+        upEl.hidden = true;
+      }
+    }
+  }, 1000);
 
   // ---- Init -----------------------------------------------------------
 

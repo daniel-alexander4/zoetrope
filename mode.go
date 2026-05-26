@@ -827,7 +827,7 @@ func (m *modeState) handleManagerWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go pingLoop(ctx, conn)
-	m.managerReadLoop(ctx, sess, conn)
+	reason := m.managerReadLoop(ctx, sess, conn)
 
 	// Reader returned — connection is dead from our perspective.
 	sess.mu.Lock()
@@ -850,11 +850,19 @@ func (m *modeState) handleManagerWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if stillRegistered {
-		m.bus.Publish("session-disconnected", map[string]any{"fingerprint": fp})
+		m.bus.Publish("session-disconnected", map[string]any{
+			"fingerprint": fp,
+			"reason":      reason,
+		})
 	}
 }
 
-func (m *modeState) managerReadLoop(ctx context.Context, sess *session, conn *websocket.Conn) {
+// managerReadLoop reads frames from a session WS until the connection
+// closes. Returns "left" when the peer closed cleanly (StatusNormalClosure
+// / StatusGoingAway) and "dropped" otherwise. The caller publishes this on
+// the session-disconnected SSE event so the manager UI can distinguish a
+// client clicking Leave from a network drop or watchdog timeout.
+func (m *modeState) managerReadLoop(ctx context.Context, sess *session, conn *websocket.Conn) string {
 	for {
 		readCtx, cancel := context.WithTimeout(ctx, linkReadTimeout)
 		hdr, raw, err := readFrame(readCtx, conn)
@@ -863,7 +871,11 @@ func (m *modeState) managerReadLoop(ctx context.Context, sess *session, conn *we
 			if ctx.Err() == nil {
 				log.Printf("manager read (session %s): %v", sess.certFP[:8], err)
 			}
-			return
+			code := websocket.CloseStatus(err)
+			if code == websocket.StatusNormalClosure || code == websocket.StatusGoingAway {
+				return "left"
+			}
+			return "dropped"
 		}
 		switch hdr.Type {
 		case "hello":

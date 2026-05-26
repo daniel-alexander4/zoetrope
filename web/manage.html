@@ -345,11 +345,15 @@
       <div class="session-header">
         <span class="session-label"></span>
         <span class="session-status" data-status="waiting">waiting</span>
+        <span class="session-uptime" hidden></span>
         <button class="session-remove" title="Close and remove this session">×</button>
       </div>
       <div class="session-url-row">
         <textarea class="session-url" readonly></textarea>
         <button class="session-copy">Copy</button>
+      </div>
+      <div class="session-firewall-hint" hidden>
+        5 minutes since this URL was generated and no client has connected. Most often this means your local firewall (Windows Defender / macOS / ufw) is blocking inbound on port 38130. Less commonly: the router NAT isn't forwarding 38130 to this machine.
       </div>
       <div class="session-controls">
         <button class="ctl-play" data-verb="play">▶ Play</button>
