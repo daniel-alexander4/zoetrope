@@ -7,13 +7,14 @@
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="page-manage nmode-standalone">
+<body class="page-manage nmode-standalone view-landing">
   <header id="manage-topbar">
     <div class="brand">
       <img src="icon.png" class="brand-mark" alt="">
       <div class="brand-name">Zoetrope</div>
       <span class="page-label">Hosting session</span>
     </div>
+    <button id="btn-back-landing" class="mi-only" hidden title="Return to the landing card">← Landing</button>
     <button id="btn-stop-hosting" hidden title="Tear down the listener and return to standalone">Stop hosting</button>
     <a class="back-link" href="/">← Ball view</a>
   </header>
@@ -24,22 +25,28 @@
          something happened even before scanning the session card below. -->
     <div id="generated-banner" class="generated-banner" hidden role="status" aria-live="polite"></div>
 
-    <!-- Standalone state: a single dominant CTA. This is what the
-         user lands on after clicking "Hosting" on the ball page. -->
-    <section id="start-card" hidden>
-      <h3>Start a hosting session</h3>
+    <!-- Landing view: two CTAs — Generate (mints and engages manager if
+         needed) and Enter Management Interface (switches to the MI view).
+         Visible only when body has .view-landing. -->
+    <section id="landing-card" class="card landing-only">
+      <h3>Hosting session</h3>
       <p>
-        Generate a connection string for your client. The URL pins your
-        practitioner identity, embeds a one-time client cert, and stays
-        valid for 10 minutes.
+        Generate a connection string to mint a one-time client URL, or step
+        into the Management Interface to configure playlists and drive
+        connected sessions. The URL pins your practitioner identity, embeds
+        a one-time client cert, and stays valid for 10 minutes.
       </p>
-      <button id="btn-start" class="primary-cta">Generate connection string</button>
+      <div class="landing-actions">
+        <button id="btn-start" class="primary-cta">Generate connection string</button>
+        <button id="btn-enter-mi" class="primary-cta secondary" disabled title="Generate a connection string first to engage hosting">Enter Management Interface →</button>
+      </div>
       <div id="start-error" class="start-error"></div>
     </section>
 
-    <!-- Hoisted above identity + editor: after quickstart, the fresh URL is
-         the thing the practitioner needs right now. -->
-    <section id="sessions" hidden>
+    <!-- Sessions card: visible in both views. On Landing it surfaces the
+         minted URLs for copying; on MI it adds the per-session transport
+         controls and inbox. -->
+    <section id="sessions" class="card" hidden>
       <header>
         <h3>Sessions</h3>
         <button id="btn-new-session" title="Mint another connection string for a new client">+ Generate connection string</button>
@@ -47,24 +54,28 @@
       <ol id="sessions-list"></ol>
     </section>
 
-    <section id="identity-panel" hidden data-collapsed="true">
-      <header class="identity-header">
-        <h3>My identity</h3>
-        <button id="identity-toggle" class="ghost-toggle" aria-expanded="false">Show full</button>
-      </header>
-      <div class="identity-row">
-        <span class="identity-label">Fingerprint</span>
-        <code id="practitioner-fp" data-full="">—</code>
-        <button class="copy-btn" data-copy="practitioner-fp" title="Copy fingerprint">Copy</button>
-      </div>
-      <div class="identity-row">
-        <span class="identity-label">Public endpoint</span>
-        <code id="practitioner-ep">—</code>
-        <button class="copy-btn" data-copy="practitioner-ep" title="Copy address">Copy</button>
-      </div>
-    </section>
+    <!-- MI-only card grid: identity + editor + (future) audio / file
+         transfer / other panels. Static positions in A1; A2 lands the HUD
+         + modality pills; a later push makes them draggable. -->
+    <div class="card-grid mi-only">
+      <section id="identity-panel" class="card" hidden data-collapsed="true">
+        <header class="identity-header">
+          <h3>My identity</h3>
+          <button id="identity-toggle" class="ghost-toggle" aria-expanded="false">Show full</button>
+        </header>
+        <div class="identity-row">
+          <span class="identity-label">Fingerprint</span>
+          <code id="practitioner-fp" data-full="">—</code>
+          <button class="copy-btn" data-copy="practitioner-fp" title="Copy fingerprint">Copy</button>
+        </div>
+        <div class="identity-row">
+          <span class="identity-label">Public endpoint</span>
+          <code id="practitioner-ep">—</code>
+          <button class="copy-btn" data-copy="practitioner-ep" title="Copy address">Copy</button>
+        </div>
+      </section>
 
-    <section id="editor-section" hidden>
+      <section id="editor-section" class="card" hidden>
       <header class="section-header">
         <h3>Session playlist</h3>
         <select id="add-pattern" title="Add pattern">
@@ -120,6 +131,7 @@
         <span class="safety-note">For use with a qualified practitioner. Not a treatment in itself.</span>
       </footer>
     </section>
+    </div>
 
     <template id="item-template">
       <li class="item">

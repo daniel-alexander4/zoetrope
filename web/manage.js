@@ -1,7 +1,11 @@
-// manage.js: the /manage page — a single-purpose hosting console.
-// Standalone state shows a prominent "Generate connection string" CTA.
-// Manager state shows the identity panel + sessions list. Client mode
-// is meaningless here, so it redirects to the ball page.
+// manage.js: the /manage page — the hosting console. Lives between two
+// in-page views (toggled by body class, no routing):
+//   - view-landing: the entry card with two CTAs (Generate / Enter MI),
+//     plus the sessions card surfacing minted URLs.
+//   - view-mi: the Management Interface — identity, sessions, editor
+//     cards in a grid. Future audio / file-transfer / other panels join
+//     the same grid as cards.
+// Client mode is meaningless here, so it redirects to the ball page.
 
 (() => {
   'use strict';
@@ -9,6 +13,8 @@
   const state = {
     nmode: 'standalone',
     sessions: new Map(), // fp → { node, snap }
+    view: 'landing',     // 'landing' | 'mi'
+    initialModeApplied: false,
   };
 
   async function csrfFetch(path, options = {}) {
@@ -39,6 +45,17 @@
 
   // ---- Page state -----------------------------------------------------
 
+  // setView toggles the in-page surface (Landing vs MI) by swapping body
+  // classes. CSS does the show/hide; no DOM rebuild, no fetch. setView is
+  // idempotent — calling it with the current view is a no-op.
+  function setView(view) {
+    state.view = view;
+    document.body.classList.remove('view-landing', 'view-mi');
+    document.body.classList.add('view-' + view);
+    const back = document.getElementById('btn-back-landing');
+    if (back) back.hidden = (view !== 'mi');
+  }
+
   function applyMode(snap) {
     const mode = snap.mode || 'standalone';
     state.nmode = mode;
@@ -52,32 +69,52 @@
       return;
     }
 
-    const startCard = document.getElementById('start-card');
+    const landing = document.getElementById('landing-card');
     const identity = document.getElementById('identity-panel');
     const editor = document.getElementById('editor-section');
     const sessions = document.getElementById('sessions');
     const stopBtn = document.getElementById('btn-stop-hosting');
+    const enterMiBtn = document.getElementById('btn-enter-mi');
+
+    // landing-card is always present in the DOM; the view-class on body
+    // is what hides it in MI view. Same with sessions (visible in both
+    // views once at least one URL has been minted).
+    landing.hidden = false;
 
     if (mode === 'manager') {
-      startCard.hidden = true;
       identity.hidden = false;
       editor.hidden = false;
       sessions.hidden = false;
       stopBtn.hidden = false;
+      enterMiBtn.disabled = false;
+      enterMiBtn.title = 'Open the Management Interface';
       document.getElementById('practitioner-fp').dataset.full = snap.practitioner_fp || '';
       document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
       refreshIdentityDisplay();
       renderSessions(snap.sessions || []);
+      // On first paint only, pick the view from session state: existing
+      // sessions → MI (the user is returning to a live setup); no
+      // sessions → Landing (the user chose to start fresh). Subsequent
+      // mode snapshots never auto-pivot — view changes are driven by
+      // explicit clicks (Enter MI / ← Landing) so generating a URL from
+      // Landing doesn't yank the user out of Landing.
+      if (!state.initialModeApplied) {
+        setView((snap.sessions && snap.sessions.length) ? 'mi' : 'landing');
+      }
     } else { // standalone
-      startCard.hidden = false;
       identity.hidden = true;
       editor.hidden = true;
       sessions.hidden = true;
       stopBtn.hidden = true;
+      enterMiBtn.disabled = true;
+      enterMiBtn.title = 'Generate a connection string first to engage hosting';
       state.sessions.clear();
       document.getElementById('sessions-list').innerHTML = '';
       document.getElementById('start-error').textContent = '';
+      // Returning from manager → standalone always lands on Landing.
+      setView('landing');
     }
+    state.initialModeApplied = true;
   }
 
   // ---- Identity collapse / expand ------------------------------------
@@ -261,6 +298,13 @@
   });
   document.getElementById('btn-new-session').addEventListener('click', e => {
     generateConnectionString(e.currentTarget, null);
+  });
+  document.getElementById('btn-enter-mi').addEventListener('click', () => {
+    if (state.nmode !== 'manager') return; // disabled gates this; defense in depth
+    setView('mi');
+  });
+  document.getElementById('btn-back-landing').addEventListener('click', () => {
+    setView('landing');
   });
   document.getElementById('btn-stop-hosting').addEventListener('click', () => {
     confirmAction(
