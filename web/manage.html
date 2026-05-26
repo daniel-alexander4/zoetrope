@@ -64,6 +64,20 @@
          body.show-info reveals it; otherwise it stays hidden. Future
          audio / file-transfer / other panels join as additional cards. -->
     <div class="card-grid mi-only">
+      <!-- Next session prep: writes to <clientDir>/intake.md for the
+           selected client. BeginSession migrates this into the new
+           session record's PreNotes and clears the file. -->
+      <section id="next-prep-card" class="card" data-views="admin" hidden>
+        <header class="section-header">
+          <h3>Next session prep</h3>
+          <select id="next-prep-client" title="Which client these pre-session notes belong to"></select>
+        </header>
+        <p class="section-hint">
+          Drafts pre-session notes for the next time this client connects. Migrates onto the session record automatically when they join.
+        </p>
+        <textarea id="next-prep-text" class="client-notes" placeholder="Intake, focus for the session, anything to remember…"></textarea>
+        <span id="next-prep-status" class="session-notes-status"></span>
+      </section>
       <section id="clients-card" class="card" data-views="admin" hidden>
         <header class="section-header">
           <h3>Clients</h3>

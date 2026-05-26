@@ -849,6 +849,48 @@ body.mode-field .balls-only { display: none !important; }
   color: var(--text);
 }
 .session-row:last-child { border-bottom: 0; }
+.session-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.session-chevron {
+  display: inline-block;
+  width: 12px;
+  color: var(--subtext);
+}
+.session-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 4px 18px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+.session-row-body[hidden] { display: none; }
+.session-notes-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--subtext);
+}
+.session-pre-notes, .session-post-notes {
+  width: 100%;
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+.session-notes-status {
+  font-size: 11px;
+  color: var(--subtext);
+  min-height: 1em;
+}
 .session-empty {
   color: var(--subtext);
   font-style: italic;

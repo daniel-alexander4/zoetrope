@@ -47,6 +47,13 @@ type SessionRecord struct {
 	EndedAt       *time.Time `json:"endedAt,omitempty"`
 	DurationSec   int64      `json:"durationSec"`
 	SessionCertFP string     `json:"sessionCertFP"`
+	// PreNotes is migrated from <clientDir>/intake.md at BeginSession,
+	// so the practitioner can draft "intake" before the client connects
+	// and have it land on the right session record. PostNotes is filled
+	// directly on the session row after the session ends. Both stay
+	// editable via SaveSessionNotes after the session record exists.
+	PreNotes  string `json:"preNotes,omitempty"`
+	PostNotes string `json:"postNotes,omitempty"`
 }
 
 type ClientView struct {
@@ -167,6 +174,63 @@ func (s *clientsStore) SaveNotes(id, notes string) error {
 	return s.writeFile(filepath.Join(s.dir, id, "notes.md"), []byte(notes))
 }
 
+// GetIntake returns the per-client "next session prep" buffer. Empty
+// string when no draft has been saved yet. Consumed by BeginSession.
+func (s *clientsStore) GetIntake(id string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.loadClientRecord(id); err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Join(s.dir, id, "intake.md"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveIntake writes the per-client prep buffer. Empty text deletes the
+// file (so a cleared field doesn't leave a stale buffer to migrate).
+func (s *clientsStore) SaveIntake(id, text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.loadClientRecord(id); err != nil {
+		return err
+	}
+	path := filepath.Join(s.dir, id, "intake.md")
+	if text == "" {
+		err := os.Remove(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return s.writeFile(path, []byte(text))
+}
+
+// SaveSessionNotes updates an existing session record's PreNotes /
+// PostNotes via load-modify-save on meta.json. The atomic writeJSON
+// keeps the file consistent under concurrent reads.
+func (s *clientsStore) SaveSessionNotes(clientID, sessionID, preNotes, postNotes string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	metaPath := filepath.Join(s.dir, clientID, "sessions", sessionID, "meta.json")
+	raw, err := os.ReadFile(metaPath)
+	if err != nil {
+		return err
+	}
+	var rec SessionRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return err
+	}
+	rec.PreNotes = preNotes
+	rec.PostNotes = postNotes
+	return s.writeJSON(metaPath, rec)
+}
+
 // BeginSession creates a new session log entry and returns its ID. mode.go
 // calls this once a WS pairs to a session whose cert is bound to a client.
 func (s *clientsStore) BeginSession(clientID, sessionCertFP string) (string, error) {
@@ -189,6 +253,15 @@ func (s *clientsStore) BeginSession(clientID, sessionCertFP string) (string, err
 		sessDir = filepath.Join(s.dir, clientID, "sessions", sid)
 	}
 	rec := SessionRecord{ID: sid, StartedAt: now, SessionCertFP: sessionCertFP}
+	// Migrate the prep buffer into the new record's PreNotes. Read +
+	// delete are best-effort — an unreadable / missing intake.md leaves
+	// PreNotes empty, which is fine; the practitioner can edit pre-notes
+	// later on the session row.
+	intakePath := filepath.Join(s.dir, clientID, "intake.md")
+	if intake, err := os.ReadFile(intakePath); err == nil {
+		rec.PreNotes = string(intake)
+		_ = os.Remove(intakePath)
+	}
 	if err := s.writeJSON(filepath.Join(sessDir, "meta.json"), rec); err != nil {
 		return "", err
 	}

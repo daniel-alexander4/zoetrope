@@ -335,6 +335,60 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	// Per-client "next session prep" intake buffer. Drafted before the
+	// session exists; BeginSession migrates it into the new SessionRecord's
+	// PreNotes and deletes the buffer.
+	mux.HandleFunc("GET /api/clients/{id}/intake", func(w http.ResponseWriter, r *http.Request) {
+		text, err := modes.clients.GetIntake(r.PathValue("id"))
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": text})
+	})
+	mux.HandleFunc("PUT /api/clients/{id}/intake", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text string `json:"text"`
+		}
+		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4*1024*1024))
+		if err != nil {
+			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := modes.clients.SaveIntake(r.PathValue("id"), body.Text); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	// Per-session notes (pre + post). Editable any time after the
+	// session record exists; the session-detail view drives this.
+	mux.HandleFunc("PUT /api/clients/{id}/sessions/{sid}/notes", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			PreNotes  string `json:"preNotes"`
+			PostNotes string `json:"postNotes"`
+		}
+		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4*1024*1024))
+		if err != nil {
+			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := modes.clients.SaveSessionNotes(r.PathValue("id"), r.PathValue("sid"), body.PreNotes, body.PostNotes); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
 
 	// ---- Client inbox (persistent file transfers) ----
 	// Mirrors /api/inbox/{id} (in-memory, consumed on fetch) but the bytes

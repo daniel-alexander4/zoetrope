@@ -538,10 +538,32 @@
       try { applyMode(JSON.parse(e.data)); } catch (err) { console.error(err); }
     });
     es.addEventListener('session-created', e => {
-      try { addSessionToList(JSON.parse(e.data)); } catch (err) {}
+      try {
+        const snap = JSON.parse(e.data);
+        addSessionToList(snap);
+        // Default the prep card to the freshly-minted client so the
+        // practitioner can start drafting intake immediately.
+        if (snap && snap.client_id) {
+          const sel = document.getElementById('next-prep-client');
+          if (sel && sel.value !== snap.client_id && state.clients.some(c => c.id === snap.client_id)) {
+            sel.value = snap.client_id;
+            loadIntakeFor(snap.client_id);
+          }
+        }
+      } catch (err) {}
     });
     es.addEventListener('session-connected', e => {
-      try { updateSessionStatus(JSON.parse(e.data).fingerprint, 'connected'); } catch (err) {}
+      try {
+        const fp = JSON.parse(e.data).fingerprint;
+        updateSessionStatus(fp, 'connected');
+        // BeginSession just migrated intake.md → SessionRecord.PreNotes.
+        // If the prep card was showing that client's intake, the buffer
+        // is now empty on disk — re-fetch so the textarea reflects that.
+        const entry = state.sessions.get(fp);
+        if (entry && entry.snap && entry.snap.client_id && entry.snap.client_id === nextPrepClientID) {
+          loadIntakeFor(nextPrepClientID);
+        }
+      } catch (err) {}
     });
     es.addEventListener('session-disconnected', e => {
       try {
@@ -903,10 +925,107 @@
       renderClientsList();
       renderFilesPicker();
       updateFilesSendState();
+      renderNextPrepPicker();
     } catch (err) {
       console.warn('clients list:', err);
     }
   }
+
+  // ---- Next session prep card (Admin view) --------------------------
+  //
+  // One per-client buffer (server-side: <clientDir>/intake.md). The
+  // picker defaults to the most-recent minted session's client_id, but
+  // is overridable so you can prep for any client at any time. On
+  // session-connected for a bound session the server consumes the file
+  // and migrates it into the new SessionRecord's PreNotes — when that
+  // happens we clear the textarea here so the practitioner doesn't see
+  // stale text that's already been recorded.
+
+  let nextPrepClientID = null;
+  let nextPrepSaveTimer = null;
+
+  function renderNextPrepPicker() {
+    const sel = document.getElementById('next-prep-client');
+    if (!sel) return;
+    const prev = sel.value;
+    sel.innerHTML = '';
+    if (!state.clients.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No clients yet';
+      sel.appendChild(opt);
+      return;
+    }
+    for (const c of state.clients) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    }
+    // Pick default: prior selection if it's still in the list; else the
+    // most-recently-minted bound session's client; else the first.
+    let pick = '';
+    if (prev && state.clients.some(c => c.id === prev)) pick = prev;
+    if (!pick) {
+      const fresh = [...state.sessions.values()]
+        .map(e => e.snap)
+        .filter(s => s && s.client_id && !s.connected)
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      if (fresh) pick = fresh.client_id;
+    }
+    if (!pick) pick = state.clients[0].id;
+    sel.value = pick;
+    loadIntakeFor(pick);
+  }
+
+  async function loadIntakeFor(clientID) {
+    nextPrepClientID = clientID || null;
+    const ta = document.getElementById('next-prep-text');
+    const status = document.getElementById('next-prep-status');
+    if (!ta || !status) return;
+    ta.value = '';
+    status.textContent = '';
+    if (!clientID) return;
+    try {
+      const r = await fetch('/api/clients/' + encodeURIComponent(clientID) + '/intake', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const body = await r.json();
+      ta.value = body.text || '';
+    } catch (err) {
+      status.textContent = 'load failed: ' + err.message;
+    }
+  }
+
+  function wireNextPrepCard() {
+    const sel = document.getElementById('next-prep-client');
+    const ta = document.getElementById('next-prep-text');
+    const status = document.getElementById('next-prep-status');
+    if (!sel || !ta || !status) return;
+    sel.addEventListener('change', () => loadIntakeFor(sel.value));
+    ta.addEventListener('input', () => {
+      if (!nextPrepClientID) return;
+      clearTimeout(nextPrepSaveTimer);
+      nextPrepSaveTimer = setTimeout(async () => {
+        status.textContent = 'saving…';
+        try {
+          const r = await csrfFetch(
+            '/api/clients/' + encodeURIComponent(nextPrepClientID) + '/intake',
+            {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: ta.value }),
+            },
+          );
+          if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
+          status.textContent = 'saved';
+          setTimeout(() => { status.textContent = ''; }, 1500);
+        } catch (err) {
+          status.textContent = 'save failed: ' + err.message;
+        }
+      }, 400);
+    });
+  }
+  wireNextPrepCard();
 
   function renderClientsList() {
     const list = document.getElementById('clients-list');
@@ -1001,15 +1120,88 @@
       return;
     }
     for (const s of sessions) {
-      const li = document.createElement('li');
-      li.className = 'session-row';
-      const started = new Date(s.startedAt);
-      const date = started.toLocaleDateString();
-      const time = started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const dur = s.durationSec > 0 ? formatDuration(s.durationSec) : (s.endedAt ? '0s' : 'in progress');
-      li.textContent = `${date} ${time} · ${dur}`;
-      list.appendChild(li);
+      list.appendChild(buildSessionRow(s));
     }
+  }
+
+  // buildSessionRow renders one session in the client timeline with an
+  // expand chevron that reveals pre/post-notes textareas. Each textarea
+  // autosaves on debounced input via PUT /api/clients/{cid}/sessions/{sid}/notes;
+  // both fields ride one request so a single keystroke can't leave the
+  // server out of sync. A "📝" marker appears on the summary line when
+  // either field is non-empty so you can spot recorded notes at a glance.
+  function buildSessionRow(s) {
+    const li = document.createElement('li');
+    li.className = 'session-row';
+    const started = new Date(s.startedAt);
+    const date = started.toLocaleDateString();
+    const time = started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const dur = s.durationSec > 0 ? formatDuration(s.durationSec) : (s.endedAt ? '0s' : 'in progress');
+    const hasNotes = (s.preNotes && s.preNotes.length) || (s.postNotes && s.postNotes.length);
+
+    const summary = document.createElement('div');
+    summary.className = 'session-summary';
+    const chevron = document.createElement('span');
+    chevron.className = 'session-chevron';
+    chevron.textContent = '▸';
+    summary.appendChild(chevron);
+    const label = document.createElement('span');
+    label.className = 'session-label-text';
+    label.textContent = `${date} ${time} · ${dur}` + (hasNotes ? ' · 📝' : '');
+    summary.appendChild(label);
+    li.appendChild(summary);
+
+    const body = document.createElement('div');
+    body.className = 'session-row-body';
+    body.hidden = true;
+    body.innerHTML =
+      '<label class="session-notes-label">Pre-session notes' +
+      '<textarea class="session-pre-notes" rows="3" placeholder="Intake / prep…"></textarea></label>' +
+      '<label class="session-notes-label">Post-session notes' +
+      '<textarea class="session-post-notes" rows="3" placeholder="What surfaced…"></textarea></label>' +
+      '<span class="session-notes-status"></span>';
+    const preEl = body.querySelector('.session-pre-notes');
+    const postEl = body.querySelector('.session-post-notes');
+    const statusEl = body.querySelector('.session-notes-status');
+    preEl.value = s.preNotes || '';
+    postEl.value = s.postNotes || '';
+    li.appendChild(body);
+
+    summary.addEventListener('click', () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      chevron.textContent = open ? '▾' : '▸';
+    });
+
+    let saveTimer = null;
+    const debounceSave = () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async () => {
+        if (!state.clientID) return;
+        statusEl.textContent = 'saving…';
+        try {
+          const r = await csrfFetch(
+            '/api/clients/' + encodeURIComponent(state.clientID) +
+              '/sessions/' + encodeURIComponent(s.id) + '/notes',
+            {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ preNotes: preEl.value, postNotes: postEl.value }),
+            },
+          );
+          if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
+          statusEl.textContent = 'saved';
+          setTimeout(() => { statusEl.textContent = ''; }, 1500);
+          const nowHas = preEl.value.length || postEl.value.length;
+          label.textContent = `${date} ${time} · ${dur}` + (nowHas ? ' · 📝' : '');
+        } catch (err) {
+          statusEl.textContent = 'save failed: ' + err.message;
+        }
+      }, 400);
+    };
+    preEl.addEventListener('input', debounceSave);
+    postEl.addEventListener('input', debounceSave);
+    return li;
   }
 
   function formatDuration(sec) {
