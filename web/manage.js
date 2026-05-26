@@ -276,6 +276,12 @@
       const step = (payload.step_idx ?? 0) + 1;
       detail += `, step ${step}/${payload.step_count}`;
     }
+    // Client-side safety pause: the practitioner needs to see this so
+    // they understand their transport verbs are queued, not applied,
+    // until the client resumes.
+    if (payload.client_paused) {
+      detail += ' · 🛑 client paused';
+    }
     entry.node.querySelector('.session-detail').textContent = detail;
     setStepControlsMode(entry.node, pat === 'position-sequence');
   }

@@ -154,8 +154,12 @@ tool, not a treatment.
   The binary listens on a public port and accepts connections from
   clients who paste the session URL.
 - **Client** — the animation viewport is unchanged but the transport
-  controls collapse to a single "Leave session" button plus a connection
-  pill. The practitioner drives every transport action.
+  controls collapse to a connection pill plus a small overlay (Pause,
+  📞 Call, 📎 Attach, Leave session). The practitioner drives every
+  transport action *except* the client's local Pause: while paused the
+  practitioner's play/advance/etc. verbs are queued (last intent wins
+  on Resume) but do not override the client's freeze. The practitioner
+  sees "🛑 client paused" on the session card so they know.
 
 Mode is per-binary (not per-tab) and is **not persisted** across
 restart — every launch starts standalone.

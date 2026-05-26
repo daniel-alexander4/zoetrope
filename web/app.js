@@ -18,6 +18,12 @@
     dirty: false,
     field: { t: 0, introT: 0, loopT: 0 },
     loopback: false, // /?loopback dev mode pins this tab to client view
+    // Client-side safety pause: when true, dispatch ignores transport
+    // verbs from the manager so the ball stays frozen until the client
+    // explicitly resumes. managerPlayIntent tracks the manager's last
+    // wish so Resume restores it.
+    clientPaused: false,
+    managerPlayIntent: true,
   };
 
   // ---- Field palettes ---------------------------------------------------
@@ -478,6 +484,39 @@
   // and client modes share one mutation path.
 
   function dispatch(verb) {
+    // Track the manager's last play/pause intent before any client-pause
+    // gating, so Resume on the client side restores what the manager
+    // most-recently wanted instead of stale state. Navigation verbs
+    // (advance/back/jump/reset) don't change play intent.
+    switch (verb.type) {
+      case 'play':
+      case 'resume':
+      case 'release':
+        state.managerPlayIntent = true;
+        break;
+      case 'pause':
+      case 'stop':
+      case 'hold':
+        state.managerPlayIntent = false;
+        break;
+      case 'toggle':
+        state.managerPlayIntent = !state.managerPlayIntent;
+        break;
+    }
+    // While the client has self-paused, drop all transport verbs so the
+    // manager can't override the client's clinical "I need a moment."
+    // Config / file / audio / capture verbs still apply — they aren't
+    // transport, and the practitioner often needs voice during a pause.
+    if (state.clientPaused) {
+      switch (verb.type) {
+        case 'play': case 'pause': case 'resume': case 'toggle':
+        case 'advance': case 'back': case 'reset': case 'stop':
+        case 'hold': case 'release':
+        case 'advance-position': case 'back-position':
+        case 'jump': case 'set-sequence':
+          return; // queued in managerPlayIntent only
+      }
+    }
     switch (verb.type) {
       case 'play':         play(); break;
       case 'pause':        pause(); break;
@@ -761,6 +800,10 @@
         // events, so the canvas stays smooth even without a state push
         // every frame.
         t: state.t,
+        // Client-side safety pause: while true, the practitioner-side
+        // session card surfaces "🛑 client paused" and the practitioner
+        // knows their transport verbs are queued, not applied.
+        client_paused: state.clientPaused,
       }),
     }).catch(()=>{});
   }
@@ -806,6 +849,34 @@
   });
 
   document.getElementById('btn-leave').addEventListener('click', networkStandalone);
+
+  // ---- Client-side safety pause ---------------------------------------
+  // While clientPaused, dispatch ignores manager transport verbs (see
+  // dispatch()'s gate). Resume restores the manager's last play intent.
+  const btnClientPause = document.getElementById('btn-client-pause');
+  function refreshClientPauseButton() {
+    if (state.clientPaused) {
+      btnClientPause.textContent = '▶ Resume';
+      btnClientPause.classList.add('active');
+    } else {
+      btnClientPause.textContent = '⏸ Pause';
+      btnClientPause.classList.remove('active');
+    }
+  }
+  refreshClientPauseButton();
+  btnClientPause.addEventListener('click', () => {
+    state.clientPaused = !state.clientPaused;
+    if (state.clientPaused) {
+      state.playing = false;
+    } else {
+      // Resume to the manager's last intended state. If they wanted Play,
+      // we start playing; if Pause, we stay paused and they can hit Play
+      // again to set us in motion.
+      state.playing = !!state.managerPlayIntent;
+    }
+    refreshClientPauseButton();
+    schedulePushClientState();
+  });
 
   // ---- File transfer (client → manager) -------------------------------
   async function sendClientFile(file) {

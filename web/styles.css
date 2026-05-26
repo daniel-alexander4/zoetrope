@@ -2073,7 +2073,8 @@ body.view-admin.show-info #identity-panel { display: block; }
   color: var(--accent-2);
 }
 #btn-leave,
-#btn-client-attach {
+#btn-client-attach,
+#btn-client-pause {
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--overlay);
@@ -2083,8 +2084,18 @@ body.view-admin.show-info #identity-panel { display: block; }
   cursor: pointer;
 }
 #btn-leave:hover,
-#btn-client-attach:hover { background: var(--overlay); }
+#btn-client-attach:hover,
+#btn-client-pause:hover { background: var(--overlay); }
 #btn-client-attach:disabled { opacity: 0.5; cursor: wait; }
+/* Client-side safety pause: the Pause button flips to a hot accent
+   while the client has self-paused so the user (and a glancing
+   bystander) can tell at a glance that the animation is intentionally
+   stopped, not stalled. */
+#btn-client-pause.active {
+  background: var(--accent-2);
+  color: var(--base);
+  border-color: var(--accent-2);
+}
 
 /* Client-mode inbox: stacks under #client-status (top-right). Hidden
    when not in client mode so a manager browsing /alone doesn't surface
