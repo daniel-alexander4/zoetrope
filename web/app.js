@@ -846,7 +846,7 @@
   document.getElementById('join-confirm').addEventListener('click', async () => {
     const url = document.getElementById('join-url').value.trim();
     const errEl = document.getElementById('join-error');
-    if (!url) { errEl.textContent = 'Session URL is required'; return; }
+    if (!url) { errEl.textContent = 'Connection URL is required'; return; }
     setClientPill('connecting');
     try {
       await networkJoin(url);
@@ -1143,6 +1143,22 @@
     document.getElementById('confirm-overlay').hidden = true;
     if (fn) fn();
   });
+
+  // Modal a11y: focus trap, Escape-to-cancel, restore previous focus.
+  if (window.installModalA11y) {
+    window.installModalA11y(document.getElementById('confirm-overlay'), {
+      cancelSelector: '#confirm-cancel',
+      initialSelector: '#confirm-ok',
+    });
+    window.installModalA11y(document.getElementById('join-dialog'), {
+      cancelSelector: '#join-cancel',
+      initialSelector: '#join-url',
+    });
+    window.installModalA11y(document.getElementById('capture-consent'), {
+      cancelSelector: '#capture-consent-deny',
+      initialSelector: '#capture-consent-allow',
+    });
+  }
 
   // ---- SSE subscriber -------------------------------------------------
 

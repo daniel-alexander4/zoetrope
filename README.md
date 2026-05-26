@@ -167,17 +167,17 @@ restart — every launch starts standalone.
 ### How a session works
 
 The practitioner runs Zoetrope on a machine with a public IP (or a
-forwarded port at their router) and clicks **Generate connection string**
+forwarded port at their router) and clicks **Generate connection URL**
 in the editor's Network block. The binary:
 
 1. Asks `api64.ipify.org` for the practitioner's public IP (one outbound
    call, user-initiated by the button click).
 2. Enters manager mode and binds the hardcoded port **38130**.
 3. Mints a fresh per-session client cert.
-4. Returns a session URL of the form
+4. Returns a connection URL of the form
    `zoetrope://join?ws=wss://<public-ip>:38130#<base64url payload>`.
 
-Each click of **+ Generate connection string** in the manager view mints
+Each click of **+ Generate connection URL** in the manager view mints
 another URL for another client. The practitioner shares each URL with
 its intended client via text/email. Sessions are single-pair, expire
 after 10 minutes if unjoined, and survive a 60-second drop before being
@@ -240,10 +240,10 @@ the **Clients** card lists existing clients and lets the practitioner add
 new ones. Opening a client surfaces a notes textarea (autosaved) and a
 timeline of past sessions with date / time / duration.
 
-"🔗 Generate URL" from the client detail view mints a connection string
+"🔗 Generate URL" from the client detail view mints a connection URL
 *bound to that client*. When the client connects, a session-log entry is
 opened automatically; when they disconnect, it's finalized with the
-duration. Connection strings minted from Landing (the standalone "+"
+duration. Connection URLs minted from Landing (the standalone "+"
 button) are unattached and don't log.
 
 Records live under `<user-config>/zoetrope/clients/<slug>/`:

@@ -97,9 +97,26 @@
       // Drop the per-view client cursor so re-entering Clients starts fresh.
       state.clientID = null;
     }
+    const admin = document.getElementById('btn-show-admin');
+    const session = document.getElementById('btn-show-session');
+    if (admin) admin.setAttribute('aria-selected', view === 'admin' ? 'true' : 'false');
+    if (session) session.setAttribute('aria-selected', view === 'session' ? 'true' : 'false');
+    updateTopbarMintVisibility();
     // Card-visibility changed; recompute editor row-span so it covers
     // the cards currently visible in the new view.
     updateEditorSpan();
+  }
+
+  // Topbar mint button shows only inside the MI (Admin or Session view),
+  // while hosting is engaged. Landing already has its own + Generate, so
+  // showing it there would be redundant. Visibility flips on view changes
+  // and on mode snapshots.
+  function updateTopbarMintVisibility() {
+    const btn = document.getElementById('topbar-mint-url');
+    if (!btn) return;
+    const hosting = state.nmode === 'manager';
+    const inMI = state.view === 'admin' || state.view === 'session' || state.view === 'client';
+    btn.hidden = !(hosting && inMI);
   }
 
   function applyMode(snap) {
@@ -172,6 +189,7 @@
       setView('landing');
     }
     state.initialModeApplied = true;
+    updateTopbarMintVisibility();
     // Card hidden states just changed; recompute the editor row-span so
     // it spans exactly the visible small siblings beside it.
     updateEditorSpan();
@@ -211,12 +229,12 @@
     setIdentityCollapsed(!cur);
   });
 
-  // ---- "Connection string generated" banner --------------------------
+  // ---- "Connection URL generated" banner ------------------------------
 
   let generatedBannerTimer = null;
   function flashGeneratedBanner() {
     const b = document.getElementById('generated-banner');
-    b.textContent = 'Connection string generated — copy it below and share with your client.';
+    b.textContent = 'Connection URL generated — copy it below and share with your client.';
     b.hidden = false;
     if (generatedBannerTimer) clearTimeout(generatedBannerTimer);
     generatedBannerTimer = setTimeout(() => { b.hidden = true; }, 6000);
@@ -461,7 +479,7 @@
   function wireSessionNode(node, fp) {
     node.querySelector('.session-remove').addEventListener('click', () => {
       confirmAction(
-        'Remove this session? The connection string becomes invalid and any connected client is disconnected.',
+        'Remove this session? The connection URL becomes invalid and any connected client is disconnected.',
         () => csrfFetch('/api/sessions/' + fp, { method: 'DELETE' }).catch(()=>{}),
       );
     });
@@ -571,7 +589,7 @@
     } catch (err) {
       const msg = err.message || String(err);
       if (errEl) errEl.textContent = msg;
-      else alert('Generate connection string failed: ' + msg);
+      else alert('Generate connection URL failed: ' + msg);
     } finally {
       triggerEl.disabled = false;
       triggerEl.textContent = originalText;
@@ -583,6 +601,32 @@
   });
   document.getElementById('btn-new-session').addEventListener('click', e => {
     generateConnectionString(e.currentTarget, null);
+  });
+  // Topbar mint: lets the practitioner mint another URL without leaving
+  // their live-session context. URL is copied to the clipboard so it's
+  // ready to paste into a chat/email — the new session is also tracked
+  // via the same addSessionToList path and surfaces in Landing on next
+  // visit.
+  document.getElementById('topbar-mint-url').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const { url, session } = await networkQuickstart();
+      addSessionToList(session, url);
+      try { await navigator.clipboard.writeText(url); } catch (_) {}
+      const b = document.getElementById('generated-banner');
+      b.textContent = 'Connection URL minted — copied to your clipboard.';
+      b.hidden = false;
+      if (generatedBannerTimer) clearTimeout(generatedBannerTimer);
+      generatedBannerTimer = setTimeout(() => { b.hidden = true; }, 6000);
+    } catch (err) {
+      alert('Generate connection URL failed: ' + (err.message || String(err)));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
   });
   document.getElementById('btn-enter-mi').addEventListener('click', async e => {
     if (state.nmode === 'manager') {
@@ -683,6 +727,14 @@
     document.getElementById('confirm-overlay').hidden = true;
     if (fn) fn();
   });
+
+  // Modal a11y: focus trap, Escape-to-cancel, restore previous focus.
+  if (window.installModalA11y) {
+    window.installModalA11y(document.getElementById('confirm-overlay'), {
+      cancelSelector: '#confirm-cancel',
+      initialSelector: '#confirm-ok',
+    });
+  }
 
   // ---- Copy buttons (identity panel) ---------------------------------
 
@@ -1408,14 +1460,23 @@
   async function saveClientNotes() {
     if (!state.clientID) return;
     const notes = document.getElementById('client-notes').value;
+    const status = document.getElementById('client-notes-status');
     try {
-      await csrfFetch('/api/clients/' + encodeURIComponent(state.clientID) + '/notes', {
+      const r = await csrfFetch('/api/clients/' + encodeURIComponent(state.clientID) + '/notes', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes }),
       });
+      if (status) {
+        if (r && r.ok === false) {
+          status.textContent = 'save failed (' + r.status + ') — notes not on disk';
+        } else {
+          status.textContent = 'saved';
+          setTimeout(() => { if (status.textContent === 'saved') status.textContent = ''; }, 1500);
+        }
+      }
     } catch (err) {
-      console.warn('notes save:', err);
+      if (status) status.textContent = 'save failed: ' + (err && err.message ? err.message : 'network error');
     }
   }
 

@@ -14,13 +14,14 @@
       <div class="brand-name">Zoetrope</div>
       <span class="page-label">Hosting session</span>
     </div>
+    <button id="topbar-mint-url" class="topbar-mint" hidden title="Mint another connection URL — copies to clipboard so you can paste it to your client without leaving the live session view">+ URL</button>
     <button id="btn-stop-hosting" hidden title="Tear down the listener and return to standalone">Stop hosting</button>
     <a class="back-link" href="/">← Ball view</a>
   </header>
 
   <main id="manage-body">
     <!-- Surfaces a brief, polite live-region announcement right after a
-         connection string is minted, so the practitioner sees that
+         connection URL is minted, so the practitioner sees that
          something happened even before scanning the session card below. -->
     <div id="generated-banner" class="generated-banner" hidden role="status" aria-live="polite"></div>
 
@@ -30,13 +31,13 @@
     <section id="landing-card" class="card landing-only">
       <h3>Hosting session</h3>
       <p>
-        Generate a connection string to mint a one-time client URL, or step
-        into the Management Interface to configure playlists and drive
-        connected sessions. The URL pins your practitioner identity, embeds
-        a one-time client cert, and stays valid for 10 minutes.
+        Generate a connection URL to share with your client, or step into
+        the Management Interface to configure playlists and drive live
+        sessions. The URL pins your practitioner identity, embeds a
+        one-time client cert, and stays valid for 10 minutes.
       </p>
       <div class="landing-actions">
-        <button id="btn-start" class="primary-cta">Generate connection string</button>
+        <button id="btn-start" class="primary-cta">Generate connection URL</button>
         <button id="btn-enter-mi" class="primary-cta secondary" title="Engage hosting and open the Management Interface">Enter Management Interface →</button>
         <button id="btn-loopback" class="primary-cta secondary" title="Dev mode: engage manager + a synthetic in-process client session for testing the protocol on one machine">Loopback (dev)</button>
       </div>
@@ -54,7 +55,7 @@
     <section id="sessions" class="card landing-only" hidden>
       <header>
         <h3>Sessions</h3>
-        <button id="btn-new-session" title="Mint another connection string for a new client">+ Generate connection string</button>
+        <button id="btn-new-session" title="Mint another connection URL for a new client">+ Generate connection URL</button>
       </header>
       <ol id="sessions-list"></ol>
     </section>
@@ -63,7 +64,7 @@
          (right). Identity sits below behind the Info button in the HUD —
          body.show-info reveals it; otherwise it stays hidden. Future
          audio / file-transfer / other panels join as additional cards. -->
-    <div class="card-grid mi-only">
+    <div id="mi-body" class="card-grid mi-only" role="tabpanel">
       <!-- Next session prep: writes to <clientDir>/intake.md for the
            selected client. BeginSession migrates this into the new
            session record's PreNotes and clears the file. -->
@@ -105,7 +106,7 @@
           <button id="lib-new" type="button" class="regen" title="New playlist">+ New</button>
           <button id="lib-rename" type="button" class="regen" title="Rename / recategorize">Rename</button>
           <button id="lib-dup" type="button" class="regen" title="Duplicate">Duplicate</button>
-          <button id="lib-del" type="button" class="regen" title="Delete playlist">Delete</button>
+          <button id="lib-del" type="button" class="regen danger" title="Delete playlist">Delete</button>
         </div>
         <div id="library-edit" class="library-edit hidden">
           <input type="text" id="lib-name" placeholder="Playlist name">
@@ -132,7 +133,7 @@
         <div id="readonly-banner" class="readonly-banner" hidden>
           Built-in playlist — Duplicate to make an editable copy.
         </div>
-        <details class="globals-collapsible">
+        <details class="globals-collapsible" open>
           <summary>Global settings</summary>
           <div class="global">
             <label>Background <input type="color" id="bg-color"></label>
@@ -271,7 +272,7 @@
     <!-- Client detail view (view-client). Shown when the practitioner
          clicks Open on a Clients-card row. Holds the name header, the
          notes textarea (autosaved to notes.md), and the session timeline.
-         "🔗 Generate URL" mints a connection string bound to this
+         "🔗 Generate URL" mints a connection URL bound to this
          client so disconnect-time logging knows who it was. -->
     <section id="client-detail" class="card client-only" hidden>
       <header class="client-detail-header">
@@ -283,6 +284,7 @@
         Notes are local to this machine. You own retention and consent.
       </p>
       <textarea id="client-notes" class="client-notes" placeholder="Notes…"></textarea>
+      <span id="client-notes-status" class="session-notes-status"></span>
       <div class="client-sessions">
         <h4>Sessions</h4>
         <ol id="client-sessions-list" class="sessions-list"></ol>
@@ -298,8 +300,10 @@
     <div id="mi-hud" class="mi-only">
       <button id="btn-show-gcs" type="button" class="hud-btn" title="Go to the Generate Connection String page">⇤ GCS</button>
       <span class="hud-spacer"></span>
-      <button id="btn-show-admin" type="button" class="hud-btn" title="Admin — between-session work (clients, playlists, identity)">Admin</button>
-      <button id="btn-show-session" type="button" class="hud-btn" title="Live session — active playlist, audio, file transfer">Session</button>
+      <span class="hud-tabs" role="tablist" aria-label="MI view">
+        <button id="btn-show-admin" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Admin — between-session work (clients, playlists, identity)">Admin</button>
+        <button id="btn-show-session" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Live session — active playlist, audio, file transfer">Session</button>
+      </span>
       <span class="hud-spacer"></span>
       <button id="btn-show-info" type="button" class="hud-btn" title="Show / hide identity details" aria-pressed="false">Info</button>
     </div>
@@ -308,7 +312,7 @@
       <li class="item">
         <div class="title-bar" title="Drag to reorder">
           <span class="pattern-name"></span>
-          <button class="del" title="Remove">×</button>
+          <button class="del danger" title="Remove" aria-label="Remove this pattern">×</button>
         </div>
         <div class="row params">
           <input type="color" class="color">
@@ -346,7 +350,7 @@
         <span class="session-label"></span>
         <span class="session-status" data-status="waiting">waiting</span>
         <span class="session-uptime" hidden></span>
-        <button class="session-remove" title="Close and remove this session">×</button>
+        <button class="session-remove danger" title="Close and remove this session" aria-label="Close and remove this session">×</button>
       </div>
       <div class="session-url-row">
         <textarea class="session-url" readonly></textarea>
@@ -358,8 +362,8 @@
       <div class="session-controls">
         <button class="ctl-play" data-verb="play">▶ Play</button>
         <button class="ctl-pause" data-verb="pause">⏸ Pause</button>
-        <button class="ctl-back" data-verb="back" title="Start of current sequence">◀</button>
-        <button class="ctl-advance" data-verb="advance" title="Next sequence">▶▶</button>
+        <button class="ctl-back" data-verb="back" title="Start of current sequence" aria-label="Back to start of current sequence">◀</button>
+        <button class="ctl-advance" data-verb="advance" title="Next sequence" aria-label="Advance to next sequence">▶▶</button>
         <button class="ctl-stop" data-verb="stop" title="Pause and reset to first sequence">Reset</button>
         <select class="session-picker" title="Jump to a specific sequence"></select>
         <label class="ctl-speed-wrap" title="Live tempo multiplier (0.25× – 4×). Sends set-speed on release.">
@@ -367,8 +371,8 @@
           <input class="ctl-speed" type="range" min="0.25" max="4" step="0.25" value="1">
           <span class="ctl-speed-value">1×</span>
         </label>
-        <button class="session-call" title="Start a voice call with this client">📞</button>
-        <button class="session-attach" title="Send a file to this client">📎</button>
+        <button class="session-call" title="Start a voice call with this client" aria-label="Start voice call with this client">📞</button>
+        <button class="session-attach" title="Send a file to this client" aria-label="Send a file to this client">📎</button>
       </div>
       <div class="session-error" hidden></div>
       <div class="session-inbox"></div>
@@ -377,9 +381,9 @@
   </template>
 
   <!-- Inline confirm overlay (Cancel / Switch). Hidden by default. -->
-  <div id="confirm-overlay" hidden>
+  <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-overlay-msg" hidden>
     <div class="confirm-card">
-      <div class="confirm-message"></div>
+      <div id="confirm-overlay-msg" class="confirm-message"></div>
       <div class="confirm-actions">
         <button id="confirm-cancel" class="ghost">Cancel</button>
         <button id="confirm-ok">Switch</button>
@@ -387,6 +391,7 @@
     </div>
   </div>
 
+  <script src="modal.js"></script>
   <script src="editor.js"></script>
   <script src="patterns.js"></script>
   <script src="transfer.js"></script>

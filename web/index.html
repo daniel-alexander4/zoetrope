@@ -21,10 +21,10 @@
         <button id="tab-balls" class="tab active" title="Ball patterns">Balls</button>
         <button id="tab-field" class="tab" title="Psychedelic field">Field</button>
       </div>
-      <button id="btn-pl-start" class="balls-only" title="Start of playlist">|&lt;</button>
-      <button id="btn-pat-start" class="balls-only" title="Start of current pattern">&lt;</button>
-      <button id="btn-play" title="Play / Pause">▶</button>
-      <button id="btn-next" class="balls-only" title="Next pattern">&gt;</button>
+      <button id="btn-pl-start" class="balls-only" title="Start of playlist" aria-label="Start of playlist">|&lt;</button>
+      <button id="btn-pat-start" class="balls-only" title="Start of current pattern" aria-label="Start of current pattern">&lt;</button>
+      <button id="btn-play" title="Play / Pause" aria-label="Play or pause">▶</button>
+      <button id="btn-next" class="balls-only" title="Next pattern" aria-label="Next pattern">&gt;</button>
       <label class="speed balls-only">
         Speed
         <select id="speed">
@@ -63,7 +63,7 @@
       <label class="ctl checkbox field-only" title="Permute the palette so colors cycle in a new order">
         <input type="checkbox" id="field-shuffle-input"> Shuffle
       </label>
-      <button id="field-shape-regen" class="regen field-only" title="Roll a new random shape / color order">🎲</button>
+      <button id="field-shape-regen" class="regen field-only" title="Roll a new random shape / color order" aria-label="Roll a new random shape and color order">🎲</button>
       <label class="ctl checkbox field-only" title="Continuously resolve to HD, hold, de-resolve, then re-resolve (rerolling random seeds each cycle)">
         <input type="checkbox" id="field-loop-input"> Loop
       </label>
@@ -71,8 +71,8 @@
         <input type="number" id="field-duration-input" min="3" max="120" step="1">
       </label>
 
-      <button id="btn-fullscreen" title="Toggle fullscreen (F)">⛶</button>
-      <button id="btn-toggle-editor" class="balls-only" title="Show/hide editor">⚙</button>
+      <button id="btn-fullscreen" title="Toggle fullscreen (F)" aria-label="Toggle fullscreen">⛶</button>
+      <button id="btn-toggle-editor" class="balls-only" title="Show/hide editor" aria-label="Show or hide editor">⚙</button>
     </div>
   </div>
 
@@ -89,7 +89,7 @@
     <div id="readonly-banner" class="readonly-banner balls-only" hidden>
       Built-in playlist — Duplicate to make an editable copy.
     </div>
-    <details class="globals-collapsible balls-only">
+    <details class="globals-collapsible balls-only" open>
       <summary>Global settings</summary>
       <div class="global">
         <label>Background <input type="color" id="bg-color"></label>
@@ -117,10 +117,10 @@
     <div class="global library-row balls-only">
       <span class="group-label">Library</span>
       <select id="playlist-picker" title="Active playlist (the one that plays)"></select>
-      <button id="lib-new" type="button" class="regen" title="New playlist">+</button>
-      <button id="lib-rename" type="button" class="regen" title="Rename / recategorize">✎</button>
-      <button id="lib-dup" type="button" class="regen" title="Duplicate">⎘</button>
-      <button id="lib-del" type="button" class="regen" title="Delete playlist">🗑</button>
+      <button id="lib-new" type="button" class="regen" title="New playlist" aria-label="New playlist">+</button>
+      <button id="lib-rename" type="button" class="regen" title="Rename / recategorize" aria-label="Rename playlist">✎</button>
+      <button id="lib-dup" type="button" class="regen" title="Duplicate" aria-label="Duplicate playlist">⎘</button>
+      <button id="lib-del" type="button" class="regen danger" title="Delete playlist" aria-label="Delete playlist">🗑</button>
     </div>
     <div id="library-edit" class="global library-edit balls-only hidden">
       <input type="text" id="lib-name" placeholder="Playlist name">
@@ -144,7 +144,7 @@
     <li class="item">
       <div class="title-bar" title="Drag to reorder">
         <span class="pattern-name"></span>
-        <button class="del" title="Remove">×</button>
+        <button class="del danger" title="Remove" aria-label="Remove this pattern">×</button>
       </div>
       <div class="row params">
         <input type="color" class="color">
@@ -182,8 +182,8 @@
     <span id="client-pill" data-state="connecting">Connecting…</span>
     <span id="client-rec-pill" class="client-rec-pill" hidden>🔴 Practitioner is recording — <a id="client-rec-revoke" href="#">Revoke</a></span>
     <button id="btn-client-pause" title="Pause the animation locally. The practitioner sees your pause and cannot override it.">⏸ Pause</button>
-    <button id="btn-client-call" title="Start a voice call with the practitioner">📞</button>
-    <button id="btn-client-attach" title="Send a file to the practitioner">📎</button>
+    <button id="btn-client-call" title="Start a voice call with the practitioner" aria-label="Start voice call with practitioner">📞</button>
+    <button id="btn-client-attach" title="Send a file to the practitioner" aria-label="Send a file to the practitioner">📎</button>
     <button id="btn-client-record" title="Record this call to your local Downloads folder" hidden>🎙 Record</button>
     <button id="btn-client-record-stop" title="Stop recording and save to Downloads" class="danger" hidden>⏹ Stop</button>
     <button id="btn-leave" title="End the session and return to standalone">Leave session</button>
@@ -191,9 +191,9 @@
 
   <!-- Practitioner has requested to record the call; shown until the
        client chooses Allow or Deny. Sends capture-response either way. -->
-  <div id="capture-consent" class="capture-consent" hidden>
+  <div id="capture-consent" class="capture-consent" role="dialog" aria-modal="true" aria-labelledby="capture-consent-heading" hidden>
     <div class="capture-consent-card">
-      <p>The practitioner is asking to record this session.</p>
+      <p id="capture-consent-heading">The practitioner is asking to record this session.</p>
       <p class="capture-consent-hint">Audio from both of you will be captured to their clinical record. You can revoke consent at any time during the recording — your recording will be discarded if you do.</p>
       <div class="capture-consent-actions">
         <button id="capture-consent-allow" type="button" class="primary-cta">Allow recording</button>
@@ -220,9 +220,9 @@
   <div id="client-inbox"></div>
 
   <!-- Inline confirm overlay (Cancel / Switch). Hidden by default. -->
-  <div id="confirm-overlay" hidden>
+  <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-overlay-msg" hidden>
     <div class="confirm-card">
-      <div class="confirm-message"></div>
+      <div id="confirm-overlay-msg" class="confirm-message"></div>
       <div class="confirm-actions">
         <button id="confirm-cancel" class="ghost">Cancel</button>
         <button id="confirm-ok">Switch</button>
@@ -231,12 +231,12 @@
   </div>
 
   <!-- Join dialog -->
-  <div id="join-dialog" class="dialog">
+  <div id="join-dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="join-dialog-heading">
     <div class="dialog-card">
-      <h3>Join a session</h3>
-      <label class="dialog-field">Session URL
+      <h3 id="join-dialog-heading">Join a session</h3>
+      <label class="dialog-field">Connection URL
         <textarea id="join-url" rows="3" placeholder="zoetrope://join?ws=…#…" autocomplete="off"></textarea>
-        <span class="dialog-hint">Paste the URL the practitioner sent you.</span>
+        <span class="dialog-hint">Paste the connection URL your practitioner sent.</span>
       </label>
       <div class="dialog-actions">
         <button id="join-cancel" class="ghost">Cancel</button>
@@ -246,6 +246,7 @@
     </div>
   </div>
 
+  <script src="modal.js"></script>
   <script src="editor.js"></script>
   <script src="patterns.js"></script>
   <script src="transfer.js"></script>

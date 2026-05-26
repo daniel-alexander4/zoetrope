@@ -1,15 +1,52 @@
 :root {
   --base: #0e0e16;
   --surface: #1e1e2e;
+  --surface-translucent: rgba(30, 30, 46, 0.85);
   --overlay: #313244;
   --text: #cdd6f4;
   --subtext: #a6adc8;
   --accent: #89b4fa;
   --accent-2: #f5c2e7;
   --danger: #f38ba8;
+  --success: var(--success);
+  --scrim: rgba(17, 17, 27, 0.92);
+  --modal-scrim: rgba(0, 0, 0, 0.6);
+  --canvas-bg: #000;
 }
 
 * { box-sizing: border-box; }
+
+/* Keyboard focus: a high-contrast accent ring on every focusable element.
+   :focus-visible (not :focus) so mouse clicks don't paint a ring; only
+   keyboard-driven focus does. outline-offset keeps the ring off the
+   element's own border so the two never visually merge. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Inputs/textareas already carry a border; pull the ring tight against
+   the existing border so we don't pile two outlines on top of each other. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline-offset: 1px;
+}
+
+/* Vestibular-sensitivity is a common comorbidity in the populations this
+   tool serves. When the user has asked for reduced motion, suppress
+   chrome transitions (drawer slide, hover translate, banner fade) — but
+   leave the therapy ball animation itself alone, since the user opted in
+   to that motion by entering the ball page. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  /* #stage is the therapy canvas — its rAF loop is the product. The rule
+     above doesn't touch requestAnimationFrame, but be explicit. */
+}
 
 html, body {
   margin: 0;
@@ -48,7 +85,7 @@ html, body {
   align-items: center;
   gap: 8px;
   max-width: calc(100vw - 32px);
-  background: rgba(30, 30, 46, 0.85);
+  background: var(--surface-translucent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--overlay);
@@ -189,7 +226,7 @@ body.mode-field .balls-only { display: none !important; }
   right: 0;
   bottom: 0;
   width: 420px;
-  background: rgba(17, 17, 27, 0.95);
+  background: var(--scrim);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border-left: 1px solid var(--overlay);
@@ -349,6 +386,14 @@ body.mode-field .balls-only { display: none !important; }
   gap: 8px;
   flex-wrap: wrap;
 }
+/* Library CRUD buttons share the .regen surface but get a comfortable
+   click target — they sit in a quiet cluster where small targets feel
+   cramped, especially "Delete" which we don't want misclicked. */
+#library-card .library-buttons .regen {
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
 #library-card .library-edit {
   display: flex;
   flex-direction: column;
@@ -505,8 +550,8 @@ body.mode-field .balls-only { display: none !important; }
   border: 1px solid transparent;
   border-radius: 4px;
   font-size: 18px;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   cursor: pointer;
   line-height: 1;
   padding: 0;
@@ -1056,7 +1101,7 @@ body.mode-field .balls-only { display: none !important; }
 }
 #mirror-card .mirror-stage {
   margin-top: 8px;
-  background: #000;
+  background: var(--canvas-bg);
   border: 1px solid var(--overlay);
   border-radius: 6px;
   overflow: hidden;
@@ -1071,8 +1116,8 @@ body.mode-field .balls-only { display: none !important; }
   height: 100%;
 }
 .audio-state-pill[data-state="connected"] {
-  background: color-mix(in oklab, #a6e3a1 30%, transparent);
-  color: #a6e3a1;
+  background: color-mix(in oklab, var(--success) 30%, transparent);
+  color: var(--success);
 }
 .audio-state-pill[data-state="outgoing-ringing"],
 .audio-state-pill[data-state="incoming-ringing"],
@@ -1131,7 +1176,7 @@ body.mode-field .balls-only { display: none !important; }
 .capture-consent {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--modal-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1207,6 +1252,23 @@ button.danger,
   border: 0;
 }
 button.danger:hover { filter: brightness(1.08); }
+
+/* Subtle danger variant — for small inline destructive buttons (Library
+   Delete, playlist-item ×, session-card ×) where a solid danger fill
+   would be too loud next to neutral siblings. Danger text + danger
+   border on the surface; the visual weight comes from the colored
+   border, not a fill. */
+.regen.danger,
+#library-card .library-buttons .regen.danger {
+  background: var(--surface);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.regen.danger:hover,
+#library-card .library-buttons .regen.danger:hover {
+  background: color-mix(in oklab, var(--danger) 14%, var(--surface));
+  filter: none;
+}
 .audio-vol {
   display: inline-flex;
   align-items: center;
@@ -1311,7 +1373,7 @@ button.danger:hover { filter: brightness(1.08); }
   gap: 8px;
   max-width: 320px;
   z-index: 50;
-  background: rgba(17, 17, 27, 0.92);
+  background: var(--scrim);
   border: 1px solid var(--overlay);
   border-radius: 8px;
   padding: 10px 12px;
@@ -1465,7 +1527,7 @@ body.page-manage {
   gap: 16px;
   padding: 12px 24px;
   border-bottom: 1px solid var(--overlay);
-  background: rgba(17, 17, 27, 0.95);
+  background: var(--scrim);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -1493,8 +1555,24 @@ body.page-manage {
   color: var(--subtext);
   margin-left: 4px;
 }
-#manage-topbar #btn-stop-hosting {
+#manage-topbar #topbar-mint-url {
   margin-left: auto;
+  background: var(--accent);
+  color: var(--base);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#manage-topbar #topbar-mint-url:hover {
+  filter: brightness(1.08);
+}
+#manage-topbar #topbar-mint-url[hidden] {
+  display: none;
+}
+#manage-topbar #btn-stop-hosting {
   background: var(--danger);
   color: var(--base);
   border: 0;
@@ -1503,21 +1581,23 @@ body.page-manage {
   font-size: 13px;
   cursor: pointer;
 }
+#manage-topbar #topbar-mint-url[hidden] + #btn-stop-hosting {
+  margin-left: auto;
+}
 #manage-topbar #btn-stop-hosting:hover {
   filter: brightness(1.1);
 }
 #manage-topbar #btn-stop-hosting[hidden] {
   display: none;
 }
-/* Back-link gets pushed to margin-left:auto only when Stop-hosting is
-   hidden; once visible, the button takes that slot and the back-link
-   sits next to it. */
+/* Back-link gets pushed to margin-left:auto only when both Stop-hosting
+   and the topbar-mint button are hidden; otherwise it sits next to them. */
 #manage-topbar .back-link {
   font-size: 13px;
   color: var(--subtext);
   text-decoration: none;
 }
-#manage-topbar #btn-stop-hosting[hidden] + .back-link {
+#manage-topbar #topbar-mint-url[hidden] + #btn-stop-hosting[hidden] + .back-link {
   margin-left: auto;
 }
 #manage-topbar .back-link:hover {
@@ -1758,7 +1838,7 @@ body.view-admin.show-info #identity-panel { display: block; }
 #confirm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--modal-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2006,8 +2086,8 @@ body.view-admin.show-info #identity-panel { display: block; }
   color: var(--subtext);
 }
 .session-status[data-status="connected"] {
-  background: color-mix(in oklab, #a6e3a1 30%, transparent);
-  color: #a6e3a1;
+  background: color-mix(in oklab, var(--success) 30%, transparent);
+  color: var(--success);
 }
 /* "left": client clicked Leave — graceful, neutral subdued color.
    "dropped": network drop or watchdog — warning color so the practitioner
@@ -2040,10 +2120,13 @@ body.view-admin.show-info #identity-panel { display: block; }
   border: 0;
   cursor: pointer;
   font-size: 18px;
-  padding: 0 6px;
+  padding: 4px 8px;
+  min-width: 32px;
+  min-height: 32px;
   line-height: 1;
+  border-radius: 4px;
 }
-.session-remove:hover { color: #fff; }
+.session-remove:hover { color: var(--text); }
 .session-url-row {
   display: flex;
   gap: 6px;
@@ -2084,8 +2167,10 @@ body.view-admin.show-info #identity-panel { display: block; }
   color: var(--text);
   border: 1px solid var(--overlay);
   border-radius: 4px;
-  padding: 4px 10px;
+  padding: 8px 12px;
   font-size: 13px;
+  min-height: 36px;
+  min-width: 36px;
   cursor: pointer;
 }
 .session-controls button:hover { background: var(--overlay); }
@@ -2145,7 +2230,7 @@ body.view-admin.show-info #identity-panel { display: block; }
   position: fixed;
   top: 16px;
   right: 16px;
-  background: rgba(17, 17, 27, 0.85);
+  background: var(--scrim);
   border: 1px solid var(--overlay);
   border-radius: 8px;
   padding: 8px 12px;
@@ -2163,8 +2248,8 @@ body.view-admin.show-info #identity-panel { display: block; }
   color: var(--subtext);
 }
 #client-pill[data-state="connected"] {
-  background: color-mix(in oklab, #a6e3a1 30%, transparent);
-  color: #a6e3a1;
+  background: color-mix(in oklab, var(--success) 30%, transparent);
+  color: var(--success);
 }
 #client-pill[data-state="connecting"],
 #client-pill[data-state="reconnecting"] {
@@ -2224,7 +2309,7 @@ body.nmode-client #client-inbox { display: flex; }
 .dialog {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--modal-scrim);
   display: none;
   align-items: center;
   justify-content: center;

@@ -643,16 +643,20 @@
     autoSaveTimer = setTimeout(autoSave, 300);
   }
   async function autoSave() {
+    const status = document.getElementById('save-status');
     try {
       const r = await fetch('/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-Zoetrope': '1' },
         body: JSON.stringify(state.config),
       });
-      if (!r.ok) { console.warn('autosave failed:', r.status); return; }
+      if (!r.ok) {
+        if (status) status.textContent = 'autosave failed (' + r.status + ') — your edits are not yet on disk';
+        return;
+      }
       markClean();
     } catch (err) {
-      console.warn('autosave failed:', err);
+      if (status) status.textContent = 'autosave failed: ' + (err && err.message ? err.message : 'network error') + ' — edits not yet saved';
     }
   }
 
