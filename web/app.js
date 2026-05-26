@@ -498,6 +498,12 @@
       case 'set-config':
         if (verb.config) applyPushedConfig(verb.config);
         break;
+      case 'capture-request':
+        showCaptureConsent();
+        break;
+      case 'capture-state':
+        setRecPillVisible(!!verb.recording);
+        break;
       default:
         console.warn('unknown verb:', verb);
     }
@@ -843,6 +849,77 @@
   const clientStatus = document.getElementById('client-status');
   if (clientStatus) window.zoetropeTransfer.attachDropTarget(clientStatus, sendClientFile);
 
+  // ---- Session capture (client side) --------------------------------
+  //
+  // Two flows live on this side:
+  //   1. Practitioner-initiated record: SSE delivers a `capture-request`
+  //      verb → show consent prompt → reply with `capture-response`.
+  //      When the host begins recording, `capture-state{recording:true}`
+  //      lights up a persistent REC pill with a "Revoke" link.
+  //   2. Client-initiated local record: 🎙 button on the overlay starts
+  //      a MediaRecorder over the same call streams the practitioner
+  //      could record; the resulting Blob downloads to the client's
+  //      Downloads folder. No protocol traffic — the host doesn't see
+  //      this happening.
+
+  function showCaptureConsent() {
+    const el = document.getElementById('capture-consent');
+    if (el) el.hidden = false;
+  }
+  function hideCaptureConsent() {
+    const el = document.getElementById('capture-consent');
+    if (el) el.hidden = true;
+  }
+
+  function setRecPillVisible(on) {
+    const pill = document.getElementById('client-rec-pill');
+    if (pill) pill.hidden = !on;
+  }
+
+  function sendNetworkVerb(payload) {
+    return csrfFetch('/api/network/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  }
+
+  document.getElementById('capture-consent-allow').addEventListener('click', () => {
+    hideCaptureConsent();
+    sendNetworkVerb({ type: 'capture-response', allowed: true });
+  });
+  document.getElementById('capture-consent-deny').addEventListener('click', () => {
+    hideCaptureConsent();
+    sendNetworkVerb({ type: 'capture-response', allowed: false });
+  });
+  document.getElementById('client-rec-revoke').addEventListener('click', (e) => {
+    e.preventDefault();
+    sendNetworkVerb({ type: 'capture-revoke' });
+    setRecPillVisible(false);
+  });
+
+  // Local-only client capture: records the same mixed call audio via
+  // capture.js, then triggers a browser download. No server, no peer
+  // notification — the host doesn't know this happened.
+  let clientRecorder = null;
+  document.getElementById('btn-client-record').addEventListener('click', () => {
+    try {
+      clientRecorder = window.zoetropeCapture.start();
+      document.getElementById('btn-client-record').hidden = true;
+      document.getElementById('btn-client-record-stop').hidden = false;
+    } catch (err) {
+      alert(err.message || String(err));
+    }
+  });
+  document.getElementById('btn-client-record-stop').addEventListener('click', async () => {
+    if (!clientRecorder) return;
+    const blob = await clientRecorder.stop();
+    clientRecorder = null;
+    window.zoetropeCapture.downloadBlob(blob, window.zoetropeCapture.captureFilename());
+    document.getElementById('btn-client-record').hidden = false;
+    document.getElementById('btn-client-record-stop').hidden = true;
+  });
+
   // ---- Voice call (bidirectional) -------------------------------------
   //
   // audio.js owns the RTCPeerConnection lifecycle. We give it a sendVerb
@@ -879,6 +956,26 @@
       micBtn.textContent = snap.micMuted ? '🎤 Muted' : '🎤 Mute';
       micBtn.classList.toggle('active', snap.micMuted);
       vol.value = Math.round(snap.speakerVolume * 100);
+    }
+    // The 🎙 Record button is meaningful only while a call is active.
+    // Stop button stays hidden until a recording is in flight; the
+    // record-click handler swaps the visibility itself.
+    const recBtn = document.getElementById('btn-client-record');
+    const recStop = document.getElementById('btn-client-record-stop');
+    const callConnected = (snap.state === 'connected');
+    if (recBtn) {
+      recBtn.hidden = !callConnected || !recStop.hidden;
+    }
+    if (!callConnected && recStop && !recStop.hidden) {
+      // Call dropped mid-recording — close the recorder and let the
+      // resulting blob still download so the user doesn't lose work.
+      if (clientRecorder) {
+        clientRecorder.stop().then(blob => {
+          window.zoetropeCapture.downloadBlob(blob, window.zoetropeCapture.captureFilename());
+          clientRecorder = null;
+        });
+      }
+      recStop.hidden = true;
     }
   }
   renderClientAudio(window.zoetropeAudio.getState());

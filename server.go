@@ -378,6 +378,35 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
+	// Session audio capture: host-side recording uploads its blob here
+	// after the user clicks Stop (and the client hasn't revoked consent).
+	// The filename is supplied by the browser via X-Capture-Filename and
+	// is sanitized inside clients.SaveCapture. Body capped by the same
+	// MaxTransferBytes that gates file transfer.
+	mux.HandleFunc("POST /api/clients/{id}/sessions/{sid}/capture", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		cap := store.Get().MaxTransferBytes
+		if cap <= 0 {
+			http.Error(w, "transfer disabled (maxTransferBytes is 0)", http.StatusForbidden)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, cap)
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				http.Error(w, fmt.Sprintf("capture exceeds local cap of %d bytes", cap), http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		filename := decodeFilenameHeader(r.Header.Get("X-Capture-Filename"))
+		if err := modes.clients.SaveCapture(r.PathValue("id"), r.PathValue("sid"), filename, data); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
 
 	return mux, nil
 }

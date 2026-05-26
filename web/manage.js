@@ -608,6 +608,17 @@
         } catch (err) { console.error(err); }
       });
     }
+    // Session capture: client's consent answer + mid-recording revoke.
+    es.addEventListener('session-capture-response', e => {
+      try {
+        const ev = JSON.parse(e.data);
+        const payload = ev.payload || {};
+        onCaptureResponse(!!payload.allowed);
+      } catch (err) { console.error(err); }
+    });
+    es.addEventListener('session-capture-revoke', e => {
+      try { onCaptureRevoke(); } catch (err) { console.error(err); }
+    });
   }
 
   // ---- Heartbeat ------------------------------------------------------
@@ -669,6 +680,13 @@
       document.getElementById('audio-mic-mute').classList.toggle('active', snap.micMuted);
       document.getElementById('audio-volume').value = Math.round(snap.speakerVolume * 100);
     }
+    // Capture button enable state tracks audio connectivity; refresh it
+    // whenever the call state changes, but only when we're not mid-flow.
+    // Wrapped in try because this fires once at init before the capture
+    // block below initializes — TDZ access on the const otherwise throws.
+    try {
+      if (capture.state === 'idle') setCaptureState('idle');
+    } catch (_) { /* capture not yet initialized */ }
   }
   document.getElementById('audio-accept').addEventListener('click', () => window.zoetropeAudio.acceptCall());
   document.getElementById('audio-decline').addEventListener('click', () => window.zoetropeAudio.declineCall());
@@ -682,6 +700,192 @@
   });
   // Initial render so the card shows the idle hint as soon as manager mode lights up.
   renderAudioCard(window.zoetropeAudio.getState());
+
+  // ---- Session audio capture (host side) ----------------------------
+  //
+  // Three-state flow on the host:
+  //   idle       — call active, button reads "🔴 Record"
+  //   pending    — capture-request sent, waiting on client consent
+  //   recording  — client allowed; MediaRecorder is running; Stop+save
+  //                shown; running timer in capture-status
+  //
+  // A capture-revoke from the client at any point during `recording`
+  // stops MediaRecorder and DISCARDS the blob (no upload, no file
+  // written) — the conservative privacy default.
+
+  const capture = {
+    state: 'idle',           // 'idle' | 'pending' | 'recording'
+    recorder: null,
+    sessionFP: null,         // which session we're recording (peerFP)
+    clientID: null,          // resolved at record-start
+    sessionID: null,         // log id, resolved at record-start
+    startedAt: 0,
+    revoked: false,
+    timerInterval: null,
+  };
+
+  function setCaptureState(next) {
+    capture.state = next;
+    const startBtn = document.getElementById('capture-start');
+    const stopBtn = document.getElementById('capture-stop');
+    const status = document.getElementById('capture-status');
+    if (!startBtn || !stopBtn || !status) return;
+    startBtn.hidden = (next !== 'idle');
+    stopBtn.hidden = (next !== 'recording');
+    if (next === 'idle') {
+      startBtn.disabled = !canStartCapture();
+      startBtn.title = startBtn.disabled
+        ? 'Record requires a connected call to a client-bound session'
+        : 'Record this session — requires client consent';
+      status.textContent = '';
+      status.classList.remove('error');
+    } else if (next === 'pending') {
+      status.textContent = 'Awaiting client consent…';
+      status.classList.remove('error');
+    } else if (next === 'recording') {
+      status.classList.remove('error');
+      tickCaptureTimer();
+    }
+  }
+
+  function canStartCapture() {
+    const a = window.zoetropeAudio.getState();
+    if (a.state !== 'connected') return false;
+    if (!a.peerFP) return false;
+    const entry = state.sessions.get(a.peerFP);
+    if (!entry || !entry.snap || !entry.snap.client_id) return false;
+    return true;
+  }
+
+  function tickCaptureTimer() {
+    const status = document.getElementById('capture-status');
+    if (!status) return;
+    const tick = () => {
+      const sec = Math.floor((Date.now() - capture.startedAt) / 1000);
+      const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+      const ss = String(sec % 60).padStart(2, '0');
+      status.textContent = '🔴 Recording ' + mm + ':' + ss;
+    };
+    tick();
+    capture.timerInterval = setInterval(tick, 1000);
+  }
+
+  function clearCaptureTimer() {
+    if (capture.timerInterval) {
+      clearInterval(capture.timerInterval);
+      capture.timerInterval = null;
+    }
+  }
+
+  async function resolveSessionLogID(clientID, sessionFP) {
+    // The active session log id is server-side state (begin/end). Today
+    // there's no API to query it, so the simplest correct shape is to
+    // pick the most-recent session for the client and trust BeginSession
+    // already opened it on connect.
+    const r = await fetch('/api/clients/' + encodeURIComponent(clientID), { cache: 'no-store' });
+    if (!r.ok) throw new Error('client lookup failed: ' + r.status);
+    const view = await r.json();
+    const sessions = view.sessions || [];
+    // Sessions are returned newest-first; the in-progress one has no
+    // endedAt and a matching session-cert-fp.
+    for (const s of sessions) {
+      if (s.sessionCertFP === sessionFP && !s.endedAt) return s.id;
+    }
+    if (sessions.length > 0) return sessions[0].id;
+    throw new Error('no session log entry for this client');
+  }
+
+  async function startCaptureFlow() {
+    if (capture.state !== 'idle') return;
+    if (!canStartCapture()) return;
+    const a = window.zoetropeAudio.getState();
+    const entry = state.sessions.get(a.peerFP);
+    capture.sessionFP = a.peerFP;
+    capture.clientID = entry.snap.client_id;
+    capture.revoked = false;
+    setCaptureState('pending');
+    try {
+      capture.sessionID = await resolveSessionLogID(capture.clientID, capture.sessionFP);
+      await sendSessionVerb(capture.sessionFP, { type: 'capture-request' });
+    } catch (err) {
+      const status = document.getElementById('capture-status');
+      status.classList.add('error');
+      status.textContent = err.message || String(err);
+      setCaptureState('idle');
+    }
+  }
+
+  function onCaptureResponse(allowed) {
+    if (capture.state !== 'pending') return;
+    if (!allowed) {
+      const status = document.getElementById('capture-status');
+      status.classList.add('error');
+      status.textContent = 'Client declined.';
+      setTimeout(() => setCaptureState('idle'), 3000);
+      return;
+    }
+    try {
+      capture.recorder = window.zoetropeCapture.start();
+    } catch (err) {
+      const status = document.getElementById('capture-status');
+      status.classList.add('error');
+      status.textContent = err.message || String(err);
+      setCaptureState('idle');
+      return;
+    }
+    capture.startedAt = Date.now();
+    setCaptureState('recording');
+    sendSessionVerb(capture.sessionFP, { type: 'capture-state', recording: true });
+  }
+
+  function onCaptureRevoke() {
+    if (capture.state !== 'recording' || !capture.recorder) return;
+    capture.revoked = true;
+    capture.recorder.stop().then(() => {
+      // Conservative privacy default: discard the blob entirely on
+      // revoke. No file is written; no server call is made.
+      const status = document.getElementById('capture-status');
+      status.classList.add('error');
+      status.textContent = 'Stopped by client — recording discarded.';
+      clearCaptureTimer();
+      setTimeout(() => setCaptureState('idle'), 4000);
+      sendSessionVerb(capture.sessionFP, { type: 'capture-state', recording: false });
+    });
+  }
+
+  async function stopCaptureFlow() {
+    if (capture.state !== 'recording' || !capture.recorder) return;
+    const blob = await capture.recorder.stop();
+    clearCaptureTimer();
+    if (capture.revoked) return; // already handled in onCaptureRevoke
+    const filename = window.zoetropeCapture.captureFilename();
+    const url = '/api/clients/' + encodeURIComponent(capture.clientID)
+      + '/sessions/' + encodeURIComponent(capture.sessionID) + '/capture';
+    const status = document.getElementById('capture-status');
+    status.textContent = 'Saving ' + filename + '…';
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-Zoetrope': '1',
+          'X-Capture-Filename': encodeURIComponent(filename),
+          'Content-Type': blob.type || 'audio/webm',
+        },
+        body: blob,
+      });
+      if (!r.ok) throw new Error((await r.text()).trim() || 'HTTP ' + r.status);
+      status.textContent = 'Saved as ' + filename;
+    } catch (err) {
+      status.classList.add('error');
+      status.textContent = 'Save failed: ' + err.message;
+    }
+    sendSessionVerb(capture.sessionFP, { type: 'capture-state', recording: false });
+    setTimeout(() => setCaptureState('idle'), 4000);
+  }
+
+  document.getElementById('capture-start').addEventListener('click', startCaptureFlow);
+  document.getElementById('capture-stop').addEventListener('click', stopCaptureFlow);
+  setCaptureState('idle');
 
   // ---- Client manager (Clients card + view-client) ------------------
 

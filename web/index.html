@@ -180,9 +180,25 @@
        the in-call audio controls stack below this. -->
   <div id="client-status">
     <span id="client-pill" data-state="connecting">Connecting…</span>
+    <span id="client-rec-pill" class="client-rec-pill" hidden>🔴 Practitioner is recording — <a id="client-rec-revoke" href="#">Revoke</a></span>
     <button id="btn-client-call" title="Start a voice call with the practitioner">📞</button>
     <button id="btn-client-attach" title="Send a file to the practitioner">📎</button>
+    <button id="btn-client-record" title="Record this call to your local Downloads folder" hidden>🎙 Record</button>
+    <button id="btn-client-record-stop" title="Stop recording and save to Downloads" class="danger" hidden>⏹ Stop</button>
     <button id="btn-leave" title="End the session and return to standalone">Leave session</button>
+  </div>
+
+  <!-- Practitioner has requested to record the call; shown until the
+       client chooses Allow or Deny. Sends capture-response either way. -->
+  <div id="capture-consent" class="capture-consent" hidden>
+    <div class="capture-consent-card">
+      <p>The practitioner is asking to record this session.</p>
+      <p class="capture-consent-hint">Audio from both of you will be captured to their clinical record. You can revoke consent at any time during the recording — your recording will be discarded if you do.</p>
+      <div class="capture-consent-actions">
+        <button id="capture-consent-allow" type="button" class="primary-cta">Allow recording</button>
+        <button id="capture-consent-deny" type="button" class="ghost">Deny</button>
+      </div>
+    </div>
   </div>
   <div id="client-audio" hidden>
     <div id="client-audio-incoming" hidden>
@@ -233,6 +249,7 @@
   <script src="patterns.js"></script>
   <script src="transfer.js"></script>
   <script src="audio.js"></script>
+  <script src="capture.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

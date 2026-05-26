@@ -1044,6 +1044,86 @@ body.mode-field .balls-only { display: none !important; }
   gap: 10px;
   padding: 8px 0;
 }
+
+/* Host-side capture controls — Record / Stop + status row inside the
+   Audio card's active panel. Live alongside mic / volume / End-call. */
+.capture-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--overlay);
+}
+.capture-status {
+  font-size: 12px;
+  color: var(--subtext);
+  flex: 1;
+  min-width: 0;
+}
+.capture-status.error { color: var(--danger); }
+
+/* Client-side REC indicator — persistent red pill in #client-status
+   shown while the practitioner is recording. The Revoke link sends a
+   capture-revoke verb which discards the recording on the host. */
+.client-rec-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: color-mix(in oklab, var(--danger) 25%, transparent);
+  color: var(--danger);
+  border-radius: 12px;
+  font-size: 12px;
+}
+.client-rec-pill[hidden] { display: none; }
+.client-rec-pill a {
+  color: var(--text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.client-rec-pill a:hover { color: var(--accent-2); }
+
+/* Client-side consent overlay — full-screen modal that demands an
+   explicit Allow or Deny before the host's recording can start. */
+.capture-consent {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 250;
+}
+.capture-consent[hidden] { display: none; }
+.capture-consent-card {
+  background: var(--surface);
+  border: 1px solid var(--overlay);
+  border-radius: 10px;
+  padding: 22px 24px;
+  width: min(480px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.capture-consent-card p { margin: 0; font-size: 14px; color: var(--text); }
+.capture-consent-hint { color: var(--subtext); font-size: 13px; }
+.capture-consent-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.capture-consent-actions .ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.capture-consent-actions .ghost:hover { background: var(--overlay); }
 .audio-incoming p, .audio-active p { margin: 0; font-size: 13px; }
 .audio-incoming-actions {
   display: flex;

@@ -319,6 +319,33 @@ func newInboxEntryID(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15-04-05.000") + "-" + hex.EncodeToString(b[:])
 }
 
+// SaveCapture writes a session audio capture (host-side recording) to
+// <clientDir>/sessions/<sid>/captures/<filename>. The filename is
+// caller-supplied (timestamp-derived in the browser) and is sanitized
+// to prevent traversal — we strip any path separators and reject empty
+// names. Atomic write via the same temp+rename helper that the rest of
+// the store uses.
+func (s *clientsStore) SaveCapture(clientID, sessionID, filename string, data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.loadClientRecord(clientID); err != nil {
+		return err
+	}
+	if sessionID == "" {
+		return errors.New("session id required")
+	}
+	if strings.ContainsAny(filename, "/\\") || filename == "" || filename == "." || filename == ".." {
+		return fmt.Errorf("invalid capture filename %q", filename)
+	}
+	// Verify the session dir exists; an unknown session shouldn't
+	// silently create a stray captures/ directory.
+	if _, err := os.Stat(filepath.Join(s.dir, clientID, "sessions", sessionID)); err != nil {
+		return err
+	}
+	path := filepath.Join(s.dir, clientID, "sessions", sessionID, "captures", filename)
+	return s.writeFile(path, data)
+}
+
 // EndSession finalizes a session entry with endedAt + durationSec. Safe
 // to call multiple times; later calls overwrite earlier endings.
 func (s *clientsStore) EndSession(clientID, sessionID string) error {

@@ -279,8 +279,20 @@
 
   function getState() { return snapshot(); }
 
+  // getCallStreams exposes the active local + remote MediaStreams so the
+  // capture module can record both sides of the call. Returns nulls when
+  // no call is active. Both fields are live MediaStream objects — the
+  // caller should not retain them across hangups.
+  function getCallStreams() {
+    return {
+      local: state.localStream,
+      remote: state.audioEl && state.audioEl.srcObject,
+    };
+  }
+
   window.zoetropeAudio = {
     init, startCall, handleSignal, acceptCall, declineCall, hangup,
     setMicMuted, setSpeakerVolume, setSpeakerMuted, getState,
+    getCallStreams,
   };
 })();

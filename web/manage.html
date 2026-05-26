@@ -197,6 +197,11 @@
             </label>
             <button id="audio-hangup" type="button" class="danger">End call</button>
           </div>
+          <div class="capture-controls">
+            <button id="capture-start" type="button" class="regen" title="Record this session — requires client consent">🔴 Record</button>
+            <button id="capture-stop" type="button" class="regen" hidden>⏹ Stop &amp; save</button>
+            <span id="capture-status" class="capture-status"></span>
+          </div>
         </div>
       </section>
 
@@ -362,6 +367,7 @@
   <script src="patterns.js"></script>
   <script src="transfer.js"></script>
   <script src="audio.js"></script>
+  <script src="capture.js"></script>
   <script src="manage.js"></script>
 </body>
 </html>

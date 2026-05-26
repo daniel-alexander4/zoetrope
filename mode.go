@@ -892,6 +892,15 @@ func (m *modeState) managerReadLoop(ctx context.Context, sess *session, conn *we
 				"fingerprint": sess.certFP,
 				"payload":     json.RawMessage(raw),
 			})
+		case "capture-response", "capture-revoke":
+			// Session-audio recording: client-side replies. response is
+			// the consent answer to a capture-request; revoke is the
+			// client withdrawing consent mid-recording. The /manage
+			// browser handles both via session-* SSE events.
+			m.bus.Publish("session-"+hdr.Type, map[string]any{
+				"fingerprint": sess.certFP,
+				"payload":     json.RawMessage(raw),
+			})
 		case "file-offer", "file-chunk", "file-cancel", "file-accept":
 			m.handleInboundTransferFrame(hdr.Type, raw, sess.certFP, sess, conn, "from-session")
 		default:
