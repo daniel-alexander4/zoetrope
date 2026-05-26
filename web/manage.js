@@ -221,6 +221,18 @@
       if (Number.isInteger(idx)) sendSessionVerb(fp, { type: 'set-sequence', index: idx });
       e.target.value = '';
     });
+    const attachBtn = node.querySelector('.session-attach');
+    attachBtn.addEventListener('click', async () => {
+      attachBtn.disabled = true;
+      try {
+        await window.zoetropeTransfer.pickAndSend('/api/sessions/' + fp + '/transfer');
+      } catch (err) {
+        console.warn('attach failed:', err);
+        alert('Send failed: ' + err.message);
+      } finally {
+        attachBtn.disabled = false;
+      }
+    });
   }
 
   // ---- Generate / Stop ------------------------------------------------
@@ -316,6 +328,16 @@
     });
     es.addEventListener('session-state', e => {
       try { const ev = JSON.parse(e.data); updateSessionDetail(ev.fingerprint, ev.payload); } catch (err) {}
+    });
+    es.addEventListener('file-received', e => {
+      try {
+        const ev = JSON.parse(e.data);
+        if (ev.direction !== 'from-session') return; // /manage only surfaces session→manager arrivals
+        const entry = state.sessions.get(ev.source_fp);
+        if (!entry) return;
+        const host = entry.node.querySelector('.session-inbox');
+        window.zoetropeTransfer.renderInboundNotification(host, ev);
+      } catch (err) { console.error(err); }
     });
   }
 

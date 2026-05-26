@@ -731,6 +731,10 @@
     if (state.sessionConfigBackup == null) {
       state.sessionConfigBackup = JSON.parse(JSON.stringify(state.config));
     }
+    // maxTransferBytes is sticky on the receiver: the practitioner doesn't
+    // dictate what files the client will accept. Preserve the local value
+    // so the editor + Go-side caps stay in sync with config.json on disk.
+    cfg.maxTransferBytes = state.config.maxTransferBytes;
     window.zoetropeEditor.applyConfig(cfg);
     enterItem(0);
   }
@@ -993,6 +997,20 @@
 
   document.getElementById('btn-leave').addEventListener('click', networkStandalone);
 
+  // ---- File transfer (client → manager) -------------------------------
+  document.getElementById('btn-client-attach').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await window.zoetropeTransfer.pickAndSend('/api/network/transfer');
+    } catch (err) {
+      console.warn('attach failed:', err);
+      alert('Send failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   // ---- Pill clicks ----------------------------------------------------
 
   document.querySelectorAll('.mpill').forEach(p => {
@@ -1071,6 +1089,16 @@
     });
     es.addEventListener('network-disconnected', () => {
       if (state.nmode === 'client') setClientPill('disconnected');
+    });
+    es.addEventListener('file-received', e => {
+      try {
+        const ev = JSON.parse(e.data);
+        // / surfaces files received from the manager. session→manager
+        // arrivals are handled on /manage.
+        if (ev.direction !== 'from-manager') return;
+        const host = document.getElementById('client-inbox');
+        window.zoetropeTransfer.renderInboundNotification(host, ev);
+      } catch (err) { console.error(err); }
     });
   }
 

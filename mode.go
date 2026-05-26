@@ -89,6 +89,13 @@ type modeState struct {
 	clientPeerFP   string // pinned manager fingerprint, for UI display
 	clientEndpoint string
 
+	// File transfers (see transfer.go). Held on modeState rather than per
+	// session so the client-mode (single-peer) and manager-mode (multi-peer)
+	// paths share one table; entries record sourceFP for routing.
+	transferMu sync.Mutex
+	inProgress map[string]*transferRX
+	inbox      map[string]*inboxEntry
+
 	// Bookkeeping
 	enteredAt       time.Time
 	lastClientEvent time.Time
@@ -100,11 +107,13 @@ type modeState struct {
 
 func newModeState(appName string, bus *eventBus, store *configStore) *modeState {
 	return &modeState{
-		current:  modeStandalone,
-		sessions: make(map[string]*session),
-		appName:  appName,
-		bus:      bus,
-		store:    store,
+		current:    modeStandalone,
+		sessions:   make(map[string]*session),
+		inProgress: make(map[string]*transferRX),
+		inbox:      make(map[string]*inboxEntry),
+		appName:    appName,
+		bus:        bus,
+		store:      store,
 	}
 }
 
@@ -392,6 +401,7 @@ func (m *modeState) Standalone() {
 	if clientConn != nil {
 		clientConn.Close(websocket.StatusGoingAway, "client leaving")
 	}
+	m.resetTransfers()
 
 	m.bus.Publish("mode-change", m.Snapshot())
 }
@@ -518,6 +528,7 @@ func (m *modeState) RemoveSession(fp string) error {
 		return fmt.Errorf("no session %s", fp)
 	}
 	sess.closeWS(websocket.StatusNormalClosure, "removed by manager")
+	m.dropTransfersForSession(fp)
 	m.bus.Publish("session-removed", map[string]any{"fingerprint": fp})
 	return nil
 }
@@ -713,6 +724,8 @@ func (m *modeState) managerReadLoop(ctx context.Context, sess *session, conn *we
 				"fingerprint": sess.certFP,
 				"payload":     json.RawMessage(raw),
 			})
+		case "file-offer", "file-chunk", "file-cancel":
+			m.handleInboundTransferFrame(hdr.Type, raw, sess.certFP, sess, conn, "from-session")
 		default:
 			log.Printf("manager: unknown frame type %q from session %s", hdr.Type, sess.certFP[:8])
 		}
@@ -732,17 +745,81 @@ func (m *modeState) clientReadLoop(ctx context.Context, conn *websocket.Conn) {
 			}
 			break
 		}
-		// All manager-originated frames are verbs in client mode.
-		// Push the raw frame to the browser via SSE; app.js decodes
-		// fields it cares about and calls dispatch().
-		m.bus.Publish("network-verb", map[string]any{
-			"type":  hdr.Type,
-			"seq":   hdr.Seq,
-			"frame": json.RawMessage(raw),
-		})
+		switch hdr.Type {
+		case "file-offer", "file-chunk", "file-cancel":
+			// File transfer terminates in the Go process (chunks reassemble
+			// here, then the browser fetches the complete inbox entry).
+			// Don't relay these to the browser SSE bus as plain verbs.
+			m.handleInboundTransferFrame(hdr.Type, raw, "", nil, conn, "from-manager")
+		default:
+			// All manager-originated frames are verbs in client mode. Push
+			// the raw frame to the browser via SSE; app.js decodes fields
+			// it cares about and calls dispatch().
+			m.bus.Publish("network-verb", map[string]any{
+				"type":  hdr.Type,
+				"seq":   hdr.Seq,
+				"frame": json.RawMessage(raw),
+			})
+		}
 	}
 	// Read loop exited → manager dropped or context cancelled.
 	m.bus.Publish("network-disconnected", map[string]any{})
+}
+
+// handleInboundTransferFrame routes one transfer-related frame. Shared by
+// both read loops: sourceFP is the session fingerprint on the manager
+// receive path and "" on the client receive path; sess is non-nil only on
+// the manager path (so file-cancel echoes get a session-scoped seq).
+// direction is the SSE event's direction field so the browser knows
+// whether it should surface the notification.
+func (m *modeState) handleInboundTransferFrame(verb string, raw []byte, sourceFP string, sess *session, conn *websocket.Conn, direction string) {
+	switch verb {
+	case "file-offer":
+		offer, err := decodeOffer(raw)
+		if err != nil {
+			log.Printf("transfer offer decode: %v", err)
+			return
+		}
+		cap := m.store.Get().MaxTransferBytes
+		_, reject := m.startInbound(offer, sourceFP, cap)
+		if reject != "" {
+			log.Printf("transfer reject %s: %s", offer.TransferID, reject)
+			sendCancel(conn, sess, offer.TransferID, reject)
+			return
+		}
+	case "file-chunk":
+		chunk, err := decodeChunkFrame(raw)
+		if err != nil {
+			log.Printf("transfer chunk decode: %v", err)
+			return
+		}
+		rx, done, addErr := m.addChunk(chunk)
+		if addErr != nil {
+			log.Printf("transfer chunk %s: %v", chunk.TransferID, addErr)
+			m.abortInbound(chunk.TransferID)
+			sendCancel(conn, sess, chunk.TransferID, "chunk-error")
+			return
+		}
+		if !done {
+			return
+		}
+		entry := m.finalizeInbound(rx)
+		m.bus.Publish("file-received", fileReceivedEvent{
+			TransferID: entry.id,
+			Name:       entry.name,
+			SizeBytes:  int64(len(entry.data)),
+			MIME:       entry.mime,
+			SourceFP:   entry.sourceFP,
+			Direction:  direction,
+		})
+	case "file-cancel":
+		cancelFrame, err := decodeCancel(raw)
+		if err != nil {
+			log.Printf("transfer cancel decode: %v", err)
+			return
+		}
+		m.abortInbound(cancelFrame.TransferID)
+	}
 }
 
 // ClientSend forwards an arbitrary message from the local browser

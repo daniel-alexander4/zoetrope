@@ -103,6 +103,11 @@
         <input type="checkbox" id="show-position-labels"> Show position labels
       </label>
     </div>
+    <div class="global balls-only" title="Largest file this machine will send or accept over a session. 0 disables file transfer.">
+      <label>Max transfer size (MiB)
+        <input type="number" id="max-transfer-mib" min="0" max="4096" step="1">
+      </label>
+    </div>
     <div class="global library-row balls-only">
       <span class="group-label">Library</span>
       <select id="playlist-picker" title="Active playlist (the one that plays)"></select>
@@ -164,11 +169,14 @@
     </li>
   </template>
 
-  <!-- Client-mode overlay: pill + leave button when in client mode. -->
+  <!-- Client-mode overlay: pill, attach (file send), and leave button when
+       in client mode. Inbound file notifications stack below as toasts. -->
   <div id="client-status">
     <span id="client-pill" data-state="connecting">Connecting…</span>
+    <button id="btn-client-attach" title="Send a file to the practitioner">📎</button>
     <button id="btn-leave" title="End the session and return to standalone">Leave session</button>
   </div>
+  <div id="client-inbox"></div>
 
   <!-- Inline confirm overlay (Cancel / Switch). Hidden by default. -->
   <div id="confirm-overlay" hidden>
@@ -198,6 +206,7 @@
   </div>
 
   <script src="editor.js"></script>
+  <script src="transfer.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

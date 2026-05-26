@@ -3,10 +3,13 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"sync/atomic"
 	"time"
 )
@@ -191,9 +194,87 @@ func newRouter(store *configStore, hb *heartbeat, bus *eventBus, modes *modeStat
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
+	// ---- File transfer endpoints ----
+	// Upload: browser POSTs the raw file bytes; Go chunks + sends over WS.
+	// Inbox: receiver browser GETs to save/open; DELETEs to dismiss.
+
+	mux.HandleFunc("POST /api/sessions/{fp}/transfer", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		handleOutboundTransfer(w, r, store, func(name, mime string, data []byte) (string, error) {
+			return modes.SendFileToSession(r.PathValue("fp"), name, mime, data)
+		})
+	}))
+	mux.HandleFunc("POST /api/network/transfer", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		handleOutboundTransfer(w, r, store, modes.SendFileToManager)
+	}))
+	mux.HandleFunc("GET /api/inbox/{id}", func(w http.ResponseWriter, r *http.Request) {
+		entry, ok := modes.consumeInbox(r.PathValue("id"))
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		mime := entry.mime
+		if mime == "" {
+			mime = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", mime)
+		w.Header().Set("Content-Length", fmt.Sprint(len(entry.data)))
+		// inline lets "Open" render previewable types in a new tab; the
+		// "Save" path uses <a download="name"> to force a download with
+		// the right filename. filename* gives browsers the original name
+		// to suggest when the user does save from the inline view.
+		w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.PathEscape(entry.name))
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(entry.data)
+	})
+	mux.HandleFunc("DELETE /api/inbox/{id}", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
+		if !modes.dismissInbox(r.PathValue("id")) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
 	mux.HandleFunc("GET /api/session/events", bus.HandleSSE)
 
 	return mux, nil
+}
+
+// handleOutboundTransfer reads a raw file body up to the local MaxTransferBytes
+// cap, then hands it to the mode-specific sender (session-bound on the
+// manager side, manager-bound on the client side).
+func handleOutboundTransfer(w http.ResponseWriter, r *http.Request, store *configStore, send func(name, mime string, data []byte) (string, error)) {
+	cap := store.Get().MaxTransferBytes
+	if cap <= 0 {
+		http.Error(w, "file transfer disabled (maxTransferBytes is 0)", http.StatusForbidden)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, cap)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, fmt.Sprintf("file exceeds local cap of %d bytes", cap), http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	name := decodeFilenameHeader(r.Header.Get("X-Transfer-Filename"))
+	mime := r.Header.Get("X-Transfer-Mime")
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	id, err := send(name, mime, data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"transfer_id": id,
+		"name":        name,
+		"size_bytes":  len(data),
+	})
 }
 
 func requireCSRF(handler http.HandlerFunc) http.HandlerFunc {

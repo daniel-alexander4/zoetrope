@@ -565,6 +565,7 @@
     setVal('linger-input', state.config.lingerSec);
     setVal('linger-lead-input', state.config.lingerLeadFrac ?? 0);
     setChecked('show-position-labels', !!state.config.showPositionLabels);
+    setVal('max-transfer-mib', Math.round((state.config.maxTransferBytes ?? 0) / (1024 * 1024)));
     if (state.config.field) {
       setVal('field-speed-input', state.config.field.speed ?? 3);
       setVal('field-palette-input', state.config.field.palette || 'Happy');
@@ -667,6 +668,11 @@
     bindInput('linger-input', e => { state.config.lingerSec = +e.target.value; markDirty(); });
     bindInput('linger-lead-input', e => { state.config.lingerLeadFrac = +e.target.value; markDirty(); });
     bindChange('show-position-labels', e => { state.config.showPositionLabels = e.target.checked; markDirty(); });
+    bindInput('max-transfer-mib', e => {
+      const mib = Math.max(0, +e.target.value | 0);
+      state.config.maxTransferBytes = mib * 1024 * 1024;
+      markDirty();
+    });
   }
 
   function wireTabHandlers() {

@@ -88,6 +88,7 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
+				modes.sweepTransfers()
 				if modes.ShouldShutdown(hb) {
 					close(watchdogQuit)
 					return

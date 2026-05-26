@@ -604,6 +604,62 @@ body.mode-field .balls-only { display: none !important; }
   opacity: 0.7;
 }
 
+/* ---- File transfer ------------------------------------------------- */
+
+.session-attach {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.session-attach:hover { background: var(--overlay); }
+.session-attach:disabled { opacity: 0.5; cursor: wait; }
+
+.session-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+}
+.session-inbox:empty { display: none; }
+
+.xfer-notification {
+  background: color-mix(in oklab, var(--accent-2) 14%, var(--surface));
+  border: 1px solid var(--accent-2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.xfer-label {
+  word-break: break-all;
+}
+.xfer-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.xfer-actions button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.xfer-actions button:hover { background: var(--overlay); }
+.xfer-actions button.xfer-dismiss {
+  color: var(--subtext);
+  margin-left: auto;
+}
+
 /* ---- Network modes -------------------------------------------------- */
 
 #client-status { display: none; }
@@ -1198,7 +1254,8 @@ body.page-manage {
   background: color-mix(in oklab, var(--danger) 30%, transparent);
   color: var(--danger);
 }
-#btn-leave {
+#btn-leave,
+#btn-client-attach {
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--overlay);
@@ -1207,7 +1264,24 @@ body.page-manage {
   font-size: 13px;
   cursor: pointer;
 }
-#btn-leave:hover { background: var(--overlay); }
+#btn-leave:hover,
+#btn-client-attach:hover { background: var(--overlay); }
+#btn-client-attach:disabled { opacity: 0.5; cursor: wait; }
+
+/* Client-mode inbox: stacks under #client-status (top-right). Hidden
+   when not in client mode so a manager browsing /alone doesn't surface
+   session→manager arrivals here (those land on /manage). */
+#client-inbox {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 320px;
+  z-index: 50;
+}
+body.nmode-client #client-inbox { display: flex; }
 
 /* Host / Join dialogs */
 .dialog {

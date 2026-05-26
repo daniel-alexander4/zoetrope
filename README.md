@@ -217,8 +217,34 @@ If the listener starts but no client ever reaches it, check both.
 
 JSON frames over a WebSocket inside the TLS connection. Manager → client:
 `play`, `pause`, `resume`, `advance`, `back`, `hold`, `release`, `stop`,
-`set-sequence`. Client → manager: `hello`, `sequences`, `state`. Every
-frame carries `pv: 1` so future revisions can negotiate cleanly.
+`set-sequence`. Client → manager: `hello`, `sequences`, `state`.
+Bidirectional: `file-offer`, `file-chunk`, `file-cancel` (see File sharing
+below). Every frame carries `pv: 1` so future revisions can negotiate
+cleanly.
+
+### File sharing
+
+Either side can send a file across an active session. The 📎 button on
+each session card (manager) and in the client-mode overlay (client)
+opens a native file picker. The selected file is chunked over the same
+mTLS WebSocket — no separate transport, no third-party service.
+
+The receiver sees an inline notification with the filename and size and
+chooses **Save** (browser download), **Open** (new tab), or **Dismiss**.
+Files never touch the receiver's disk until they explicitly save.
+Received bytes live tab-ephemerally: closing the page or disconnecting
+discards them. Unfetched arrivals are dropped from receiver memory
+after five minutes.
+
+Size is capped per machine via **Max transfer size (MiB)** in the
+editor (default 16 MiB). The cap is sticky on the receiver — a
+manager-pushed config does not override the client's local value, so
+the client controls what they will accept. Set the cap to `0` to
+disable file transfer on this machine.
+
+Any file type is accepted: no extension allowlist, no MIME sniffing.
+The browser handles received bytes through Blob URLs, so executables
+arrive as inert downloads — they are not run.
 
 ### Limitations to be aware of
 
@@ -263,6 +289,11 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 ├── config.go       JSON load/save, defaults, atomic writes
 ├── server.go       HTTP routes, embedded asset serving
 ├── browser.go      cross-platform default-browser open
+├── crypto.go       practitioner + per-session identities
+├── link.go         WS transport, mTLS pinning, frame I/O
+├── mode.go         standalone / manager / client transitions + sessions
+├── transfer.go     file-transfer protocol (chunking, inbox, caps)
+├── bridge.go       SSE bus between Go and browser tabs
 ├── web/            embedded UI (HTML/CSS/JS)
 └── build/          cross-compile script, Info.plist, .desktop entry, lipo helper
 ```

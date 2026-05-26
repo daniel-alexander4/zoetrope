@@ -91,6 +91,11 @@
           <input type="checkbox" id="show-position-labels"> Show position labels
         </label>
       </div>
+      <div class="global" title="Largest file this machine will send or accept over a session. 0 disables file transfer.">
+        <label>Max transfer size (MiB)
+          <input type="number" id="max-transfer-mib" min="0" max="4096" step="1">
+        </label>
+      </div>
       <div class="global library-row">
         <span class="group-label">Library</span>
         <select id="playlist-picker" title="Active playlist (the one pushed to clients on connect or active-session switch)"></select>
@@ -170,7 +175,9 @@
         <button class="ctl-advance" data-verb="advance" title="Next sequence">▶▶</button>
         <button class="ctl-stop" data-verb="stop" title="Pause and reset to first sequence">Reset</button>
         <select class="session-picker" title="Jump to a specific sequence"></select>
+        <button class="session-attach" title="Send a file to this client">📎</button>
       </div>
+      <div class="session-inbox"></div>
       <div class="session-detail"></div>
     </li>
   </template>
@@ -187,6 +194,7 @@
   </div>
 
   <script src="editor.js"></script>
+  <script src="transfer.js"></script>
   <script src="manage.js"></script>
 </body>
 </html>
