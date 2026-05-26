@@ -268,6 +268,16 @@ func (m *modeState) Host(req hostRequest) error {
 	}
 
 	m.mu.Lock()
+	// Idempotent for re-engage: already in manager mode → no-op, return
+	// success. This is what the /manage Landing button's POST hits when
+	// the frontend's in-memory state.nmode is stale; without idempotency
+	// the user sees a 400 and "click did nothing." Client mode is still
+	// a real conflict — joining-as-client and wanting-to-host need a
+	// deliberate leave first.
+	if m.current == modeManager {
+		m.mu.Unlock()
+		return nil
+	}
 	if m.current != modeStandalone {
 		m.mu.Unlock()
 		return fmt.Errorf("already in %s mode", m.current)
