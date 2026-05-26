@@ -1135,6 +1135,7 @@ body.view-mi .landing-only {
   display: grid;
   gap: 16px;
   grid-template-columns: 1fr;
+  align-items: start; /* don't stretch shorter cards (Library) to match the editor's height */
   margin-bottom: 80px; /* clear space for the sticky #mi-hud below */
 }
 @media (min-width: 880px) {
