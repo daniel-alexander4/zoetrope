@@ -182,68 +182,80 @@
       return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
     },
 
-    'rectangle': (t, item, vp, ctx) => {
-      // Rounded-rectangle perimeter trace. cornerRadius ∈ [0,1] is a
-      // fraction of min(half-width, half-height): 0 = sharp corners,
-      // 1 = capsule (or full circle if w = h). startCorner picks where
-      // t=0 sits ('tl' or 'tr'); direction picks CW vs CCW from there.
+    'serpentine': (t, item, vp, ctx) => {
+      // Serpentine / boustrophedon. N down-lanes interleaved with N up-
+      // lanes in the gaps, traversed as a continuous closed loop. The
+      // path goes: row 0 (Start) → row 2 → … → row 2N-2 → row 2N-1
+      // (Turn at the bottom) → row 2N-3 → … → row 1 → back to row 0.
+      // startCorner mirrors x ('tl' vs 'tr'); direction reverses t
+      // (cw=forward, ccw=backward); cornerRadius ∈ [0,1] rounds the
+      // U-turns up to a half-circle. lanes is N (the number of down-
+      // lanes; total rows = 2N).
       const m = ctx.config.ballSize / 2;
       const W = Math.max(1, (vp.w - 2 * m) / 2 - 8);
       const H = Math.max(1, (vp.h - 2 * m) / 2 - 8);
+      const N = Math.max(2, Math.min(8, Math.floor(item.lanes ?? 3)));
+      const step = (2 * H) / (2 * N);
       const round = Math.min(1, Math.max(0, item.cornerRadius ?? 0));
-      const r = round * Math.min(W, H);
+      const r = Math.max(0, round * Math.min(step / 2, W / 2));
       const cx = vp.w / 2;
       const cy = vp.h / 2;
 
-      const segH = Math.max(0, 2 * W - 2 * r);
-      const segV = Math.max(0, 2 * H - 2 * r);
-      const arc = (Math.PI / 2) * r;
-      const L = 2 * segH + 2 * segV + 4 * arc;
-      if (L <= 0) return { x: cx, y: cy };
-
-      // Canonical traversal is CW from TL: top L→R, TR arc, right T→B,
-      // BR arc, bottom R→L, BL arc, left B→T, TL arc. Apply a phase
-      // offset for startCorner and a sign for direction, then resolve.
-      const phi = item.startCorner === 'tr' ? segH / L : 0;
+      const flipX = item.startCorner === 'tr' ? -1 : 1;
       const sign = item.direction === 'ccw' ? -1 : 1;
-      let u = (phi + sign * t) % 1;
+      let u = (sign * t) % 1;
       if (u < 0) u += 1;
-      const s = u * L;
 
-      const c1 = segH;
-      const c2 = c1 + arc;
-      const c3 = c2 + segV;
-      const c4 = c3 + arc;
-      const c5 = c4 + segH;
-      const c6 = c5 + arc;
-      const c7 = c6 + segV;
-      let dx, dy;
-      if (s < c1) {
-        dx = -W + r + s;          dy = -H;
-      } else if (s < c2) {
-        const a = (s - c1) / r;
-        dx = (W - r) + r * Math.sin(a);
-        dy = (-H + r) - r * Math.cos(a);
-      } else if (s < c3) {
-        dx = W;                   dy = -H + r + (s - c2);
-      } else if (s < c4) {
-        const a = (s - c3) / r;
-        dx = (W - r) + r * Math.cos(a);
-        dy = (H - r) + r * Math.sin(a);
-      } else if (s < c5) {
-        dx = W - r - (s - c4);    dy = H;
-      } else if (s < c6) {
-        const a = (s - c5) / r;
-        dx = (-W + r) - r * Math.sin(a);
-        dy = (H - r) + r * Math.cos(a);
-      } else if (s < c7) {
-        dx = -W;                  dy = H - r - (s - c6);
-      } else {
-        const a = (s - c7) / r;
-        dx = (-W + r) - r * Math.cos(a);
-        dy = (-H + r) - r * Math.sin(a);
+      const laneLen = Math.max(0, 2 * (W - r));
+      const arcLen = (Math.PI / 2) * r;
+      const turn1Len = 2 * arcLen + Math.max(0, step - 2 * r);
+      const turn2Len = 2 * arcLen + Math.max(0, 2 * step - 2 * r);
+      const totalLen = 2 * N * laneLen + (2 * N - 2) * turn2Len + 2 * turn1Len;
+      if (totalLen <= 0) return { x: cx, y: cy };
+
+      let s = u * totalLen;
+      for (let i = 0; i < 2 * N; i++) {
+        const rowIdx = i < N ? 2 * i : 4 * N - 2 * i - 1;
+        const ly = -H + (rowIdx + 0.5) * step;
+        if (s < laneLen) {
+          const uLane = s / laneLen;
+          const goingRight = (i % 2 === 0);
+          const dx = goingRight ? -(W - r) + uLane * 2 * (W - r) : (W - r) - uLane * 2 * (W - r);
+          return { x: cx + flipX * dx, y: cy + ly };
+        }
+        s -= laneLen;
+
+        const sideSign = (i % 2 === 0) ? 1 : -1;
+        const sideX = sideSign * (W - r);
+        const nextI = (i + 1) % (2 * N);
+        const nextRowIdx = nextI < N ? 2 * nextI : 4 * N - 2 * nextI - 1;
+        const nextLy = -H + (nextRowIdx + 0.5) * step;
+        const turnLen = (i === N - 1 || i === 2 * N - 1) ? turn1Len : turn2Len;
+        if (s < turnLen) {
+          const ys = ly;
+          const ye = nextLy;
+          const dirSign = Math.sign(ye - ys) || 1;
+          const straightLen = Math.max(0, Math.abs(ye - ys) - 2 * r);
+
+          let dx, dy;
+          if (s < arcLen) {
+            const theta = (s / arcLen) * (Math.PI / 2);
+            dx = sideX + sideSign * r * Math.sin(theta);
+            dy = ys + dirSign * r * (1 - Math.cos(theta));
+          } else if (s < arcLen + straightLen) {
+            const ls = s - arcLen;
+            dx = sideSign * W;
+            dy = ys + dirSign * (r + ls);
+          } else {
+            const lambda = (s - arcLen - straightLen) / arcLen;
+            dx = sideX + sideSign * r * Math.cos(lambda * Math.PI / 2);
+            dy = (ye - dirSign * r) + dirSign * r * Math.sin(lambda * Math.PI / 2);
+          }
+          return { x: cx + flipX * dx, y: cy + dy };
+        }
+        s -= turnLen;
       }
-      return { x: cx + dx, y: cy + dy };
+      return { x: cx, y: cy };
     },
 
     'fig8-h': (t, item, vp, ctx) => {

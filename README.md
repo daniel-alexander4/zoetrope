@@ -59,7 +59,7 @@ manager. The browser tab is harmless on its own.
 | diag-ulbr   | upper-left ↔ bottom-right (↘)  | —                      | —          |
 | diag-urbl   | upper-right ↔ bottom-left (↙)  | —                      | —          |
 | circle      | revolution                     | yes                    | —          |
-| rectangle   | perimeter of a rounded rectangle | yes                  | — (see `cornerRadius`, `startCorner`) |
+| serpentine  | raster-scan back-and-forth + interleaved return | yes        | — (see `cornerRadius`, `startCorner`, `lanes`) |
 | fig8-h      | figure 8 from two tangent circles (∞ orientation) | yes | —          |
 | fig8-v      | figure 8 from two tangent circles (8 orientation) | yes | —          |
 | infinity-h  | trace of ∞ (lobes side by side, Lissajous) | yes          | —          |
@@ -73,11 +73,14 @@ second) and `ballSize` (pixels, global) apply to every item. `repeats`
 speed multiplier in the transport bar scales `speed` at runtime without
 persisting.
 
-The `rectangle` pattern adds two per-item fields: `cornerRadius` (0–1, a
-fraction of the shorter half-axis; 0 = sharp corners, 1 = capsule) and
-`startCorner` (`tl` or `tr`) for where on the top edge the trace begins.
-Combined with `direction`, the two starting corners cover all four
-ways to enter the loop.
+The `serpentine` pattern is a closed-loop raster scan. The ball sweeps
+across `lanes` horizontal lanes (2–8, default 3), dropping into the next
+lane at each end via a U-turn, until it reaches the bottom ("Turn") —
+then serpentines back up through the gaps between the down-lanes,
+returning to Start to close the loop. Per-item fields: `cornerRadius`
+(0–1, how round the U-turns are; 0 = sharp, 1 = full half-circle),
+`startCorner` (`tl` or `tr`), `lanes` (integer), and `direction`
+(`cw` runs the loop forward, `ccw` reverses it).
 
 `lingerSec` (global, default 0) is a vision-training aid for the linear
 patterns (h-sweep, v-sweep, diag-ulbr, diag-urbl). When > 0, the ball

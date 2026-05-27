@@ -613,7 +613,7 @@ body.mode-field .balls-only { display: none !important; }
 .item[data-pattern="infinity-v"] .angle-wrap,
 .item[data-pattern="fig8-h"] .angle-wrap,
 .item[data-pattern="fig8-v"] .angle-wrap,
-.item[data-pattern="rectangle"] .angle-wrap,
+.item[data-pattern="serpentine"] .angle-wrap,
 .item[data-pattern="h-sweep"] .direction-wrap,
 .item[data-pattern="h-sweep"] .angle-wrap,
 .item[data-pattern="v-sweep"] .direction-wrap,
@@ -626,9 +626,9 @@ body.mode-field .balls-only { display: none !important; }
   display: none;
 }
 
-/* Rectangle-only knobs: corner roundness + starting corner. */
-.rect-wrap { display: none; }
-.item[data-pattern="rectangle"] .rect-wrap { display: inline-flex; }
+/* Serpentine-only knobs: corner roundness, starting corner, lane count. */
+.serpentine-wrap { display: none; }
+.item[data-pattern="serpentine"] .serpentine-wrap { display: inline-flex; }
 
 /* Position-sequence items: hide the continuous-pattern knobs, show the
    sequence editor (name/dwell/transit + step list). Default-hide for every
