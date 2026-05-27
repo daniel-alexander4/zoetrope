@@ -59,6 +59,7 @@ manager. The browser tab is harmless on its own.
 | diag-ulbr   | upper-left ↔ bottom-right (↘)  | —                      | —          |
 | diag-urbl   | upper-right ↔ bottom-left (↙)  | —                      | —          |
 | circle      | revolution                     | yes                    | —          |
+| rectangle   | perimeter of a rounded rectangle | yes                  | — (see `cornerRadius`, `startCorner`) |
 | infinity-h  | trace of ∞ (lobes side by side) | yes                   | —          |
 | infinity-v  | trace of vertical 8 (lobes stacked) | yes               | —          |
 | bounce      | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
@@ -69,6 +70,12 @@ second) and `ballSize` (pixels, global) apply to every item. `repeats`
 (per item) is how many cycles play before the playlist advances. The
 speed multiplier in the transport bar scales `speed` at runtime without
 persisting.
+
+The `rectangle` pattern adds two per-item fields: `cornerRadius` (0–1, a
+fraction of the shorter half-axis; 0 = sharp corners, 1 = capsule) and
+`startCorner` (`tl` or `tr`) for where on the top edge the trace begins.
+Combined with `direction`, the two starting corners cover all four
+ways to enter the loop.
 
 `lingerSec` (global, default 0) is a vision-training aid for the linear
 patterns (h-sweep, v-sweep, diag-ulbr, diag-urbl). When > 0, the ball

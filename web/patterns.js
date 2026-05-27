@@ -182,6 +182,70 @@
       return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
     },
 
+    'rectangle': (t, item, vp, ctx) => {
+      // Rounded-rectangle perimeter trace. cornerRadius ∈ [0,1] is a
+      // fraction of min(half-width, half-height): 0 = sharp corners,
+      // 1 = capsule (or full circle if w = h). startCorner picks where
+      // t=0 sits ('tl' or 'tr'); direction picks CW vs CCW from there.
+      const m = ctx.config.ballSize / 2;
+      const W = Math.max(1, (vp.w - 2 * m) / 2 - 8);
+      const H = Math.max(1, (vp.h - 2 * m) / 2 - 8);
+      const round = Math.min(1, Math.max(0, item.cornerRadius ?? 0));
+      const r = round * Math.min(W, H);
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+
+      const segH = Math.max(0, 2 * W - 2 * r);
+      const segV = Math.max(0, 2 * H - 2 * r);
+      const arc = (Math.PI / 2) * r;
+      const L = 2 * segH + 2 * segV + 4 * arc;
+      if (L <= 0) return { x: cx, y: cy };
+
+      // Canonical traversal is CW from TL: top L→R, TR arc, right T→B,
+      // BR arc, bottom R→L, BL arc, left B→T, TL arc. Apply a phase
+      // offset for startCorner and a sign for direction, then resolve.
+      const phi = item.startCorner === 'tr' ? segH / L : 0;
+      const sign = item.direction === 'ccw' ? -1 : 1;
+      let u = (phi + sign * t) % 1;
+      if (u < 0) u += 1;
+      const s = u * L;
+
+      const c1 = segH;
+      const c2 = c1 + arc;
+      const c3 = c2 + segV;
+      const c4 = c3 + arc;
+      const c5 = c4 + segH;
+      const c6 = c5 + arc;
+      const c7 = c6 + segV;
+      let dx, dy;
+      if (s < c1) {
+        dx = -W + r + s;          dy = -H;
+      } else if (s < c2) {
+        const a = (s - c1) / r;
+        dx = (W - r) + r * Math.sin(a);
+        dy = (-H + r) - r * Math.cos(a);
+      } else if (s < c3) {
+        dx = W;                   dy = -H + r + (s - c2);
+      } else if (s < c4) {
+        const a = (s - c3) / r;
+        dx = (W - r) + r * Math.cos(a);
+        dy = (H - r) + r * Math.sin(a);
+      } else if (s < c5) {
+        dx = W - r - (s - c4);    dy = H;
+      } else if (s < c6) {
+        const a = (s - c5) / r;
+        dx = (-W + r) - r * Math.sin(a);
+        dy = (H - r) + r * Math.cos(a);
+      } else if (s < c7) {
+        dx = -W;                  dy = H - r - (s - c6);
+      } else {
+        const a = (s - c7) / r;
+        dx = (-W + r) - r * Math.cos(a);
+        dy = (-H + r) - r * Math.sin(a);
+      }
+      return { x: cx + dx, y: cy + dy };
+    },
+
     'infinity-v': (t, item, vp, ctx) => {
       // Vertical infinity (8 standing up — lobes stacked).
       const m = ctx.config.ballSize / 2;

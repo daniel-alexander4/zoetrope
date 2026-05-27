@@ -17,6 +17,7 @@
     'diag-urbl':        'Diagonal ↙ (UR↔BL)',
     'bounce':           'Bounce',
     'circle':           'Circle',
+    'rectangle':        'Rectangle',
     'infinity-h':       'Infinity ∞',
     'infinity-v':       'Infinity 8 (vertical)',
     'position-sequence':'Position sequence',
@@ -28,6 +29,7 @@
     'diag-urbl':        { color: '#eba0ac' },
     'bounce':           { color: '#f38ba8', angleDeg: 37 },
     'circle':           { color: '#a6e3a1', direction: 'cw' },
+    'rectangle':        { color: '#94e2d5', direction: 'cw', cornerRadius: 0.15, startCorner: 'tl' },
     'infinity-h':       { color: '#89b4fa', direction: 'cw' },
     'infinity-v':       { color: '#cba6f7', direction: 'cw' },
     'position-sequence':{
@@ -101,6 +103,8 @@
       node.querySelector('.repeats').value = item.repeats ?? 1;
       node.querySelector('.direction').value = item.direction || 'cw';
       node.querySelector('.angle').value = item.angleDeg ?? 37;
+      node.querySelector('.corner-radius').value = item.cornerRadius ?? 0.15;
+      node.querySelector('.start-corner').value = item.startCorner || 'tl';
 
       node.querySelector('.color').addEventListener('input', e => {
         item.color = e.target.value;
@@ -116,6 +120,14 @@
       });
       node.querySelector('.angle').addEventListener('input', e => {
         item.angleDeg = +e.target.value;
+        markDirty();
+      });
+      node.querySelector('.corner-radius').addEventListener('input', e => {
+        item.cornerRadius = +e.target.value;
+        markDirty();
+      });
+      node.querySelector('.start-corner').addEventListener('change', e => {
+        item.startCorner = e.target.value;
         markDirty();
       });
 

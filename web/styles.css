@@ -611,6 +611,7 @@ body.mode-field .balls-only { display: none !important; }
 .item[data-pattern="circle"] .angle-wrap,
 .item[data-pattern="infinity-h"] .angle-wrap,
 .item[data-pattern="infinity-v"] .angle-wrap,
+.item[data-pattern="rectangle"] .angle-wrap,
 .item[data-pattern="h-sweep"] .direction-wrap,
 .item[data-pattern="h-sweep"] .angle-wrap,
 .item[data-pattern="v-sweep"] .direction-wrap,
@@ -622,6 +623,10 @@ body.mode-field .balls-only { display: none !important; }
 .item[data-pattern="bounce"] .direction-wrap {
   display: none;
 }
+
+/* Rectangle-only knobs: corner roundness + starting corner. */
+.rect-wrap { display: none; }
+.item[data-pattern="rectangle"] .rect-wrap { display: inline-flex; }
 
 /* Position-sequence items: hide the continuous-pattern knobs, show the
    sequence editor (name/dwell/transit + step list). Default-hide for every
