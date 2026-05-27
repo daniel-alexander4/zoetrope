@@ -60,8 +60,10 @@ manager. The browser tab is harmless on its own.
 | diag-urbl   | upper-right ↔ bottom-left (↙)  | —                      | —          |
 | circle      | revolution                     | yes                    | —          |
 | rectangle   | perimeter of a rounded rectangle | yes                  | — (see `cornerRadius`, `startCorner`) |
-| infinity-h  | trace of ∞ (lobes side by side) | yes                   | —          |
-| infinity-v  | trace of vertical 8 (lobes stacked) | yes               | —          |
+| fig8-h      | figure 8 from two tangent circles (∞ orientation) | yes | —          |
+| fig8-v      | figure 8 from two tangent circles (8 orientation) | yes | —          |
+| infinity-h  | trace of ∞ (lobes side by side, Lissajous) | yes          | —          |
+| infinity-v  | trace of vertical 8 (lobes stacked, Lissajous) | yes      | —          |
 | bounce      | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
 | position-sequence | ordered walk through named gaze targets (8-point grid + center) | — | —          |
 

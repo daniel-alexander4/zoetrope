@@ -18,6 +18,8 @@
     'bounce':           'Bounce',
     'circle':           'Circle',
     'rectangle':        'Rectangle',
+    'fig8-h':           'Figure 8 (two circles, ∞)',
+    'fig8-v':           'Figure 8 (two circles, 8)',
     'infinity-h':       'Infinity ∞',
     'infinity-v':       'Infinity 8 (vertical)',
     'position-sequence':'Position sequence',
@@ -30,6 +32,8 @@
     'bounce':           { color: '#f38ba8', angleDeg: 37 },
     'circle':           { color: '#a6e3a1', direction: 'cw' },
     'rectangle':        { color: '#94e2d5', direction: 'cw', cornerRadius: 0.15, startCorner: 'tl' },
+    'fig8-h':           { color: '#89dceb', direction: 'cw' },
+    'fig8-v':           { color: '#74c7ec', direction: 'cw' },
     'infinity-h':       { color: '#89b4fa', direction: 'cw' },
     'infinity-v':       { color: '#cba6f7', direction: 'cw' },
     'position-sequence':{

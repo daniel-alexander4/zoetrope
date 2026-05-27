@@ -246,6 +246,60 @@
       return { x: cx + dx, y: cy + dy };
     },
 
+    'fig8-h': (t, item, vp, ctx) => {
+      // True figure-8 from two tangent circles, side by side. Distinct
+      // from infinity-h (which is a Lissajous lemniscate). The two
+      // circles share a vertical tangent at the origin, so the ball
+      // crosses twice per cycle moving along ±y — and the traversal is
+      // smooth at every crossing (no cusp).
+      const m = ctx.config.ballSize / 2;
+      const r = Math.max(1, Math.min((vp.w - 2 * m - 16) / 4, (vp.h - 2 * m - 16) / 2));
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const sign = item.direction === 'ccw' ? -1 : 1;
+      const half = t < 0.5 ? 0 : 1;
+      const u = (t - 0.5 * half) * 2;
+      let dx, dy;
+      if (half === 0) {
+        // Right lobe (center (+r, 0)); origin = angle π of that circle.
+        const a = Math.PI - sign * TAU * u;
+        dx = r + r * Math.cos(a);
+        dy = r * Math.sin(a);
+      } else {
+        // Left lobe (center (-r, 0)); origin = angle 0.
+        const a = sign * TAU * u;
+        dx = -r + r * Math.cos(a);
+        dy = r * Math.sin(a);
+      }
+      return { x: cx + dx, y: cy + dy };
+    },
+
+    'fig8-v': (t, item, vp, ctx) => {
+      // True figure-8 from two tangent circles, stacked. Distinct from
+      // infinity-v. Shared horizontal tangent at the origin; the ball
+      // crosses twice per cycle moving along ±x. Smooth at all crossings.
+      const m = ctx.config.ballSize / 2;
+      const r = Math.max(1, Math.min((vp.w - 2 * m - 16) / 2, (vp.h - 2 * m - 16) / 4));
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      const sign = item.direction === 'ccw' ? -1 : 1;
+      const half = t < 0.5 ? 0 : 1;
+      const u = (t - 0.5 * half) * 2;
+      let dx, dy;
+      if (half === 0) {
+        // Top lobe (center (0, -r)); origin = angle π/2 of that circle.
+        const a = Math.PI / 2 - sign * TAU * u;
+        dx = r * Math.cos(a);
+        dy = -r + r * Math.sin(a);
+      } else {
+        // Bottom lobe (center (0, +r)); origin = angle -π/2.
+        const a = -Math.PI / 2 + sign * TAU * u;
+        dx = r * Math.cos(a);
+        dy = r + r * Math.sin(a);
+      }
+      return { x: cx + dx, y: cy + dy };
+    },
+
     'infinity-v': (t, item, vp, ctx) => {
       // Vertical infinity (8 standing up — lobes stacked).
       const m = ctx.config.ballSize / 2;

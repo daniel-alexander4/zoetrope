@@ -611,6 +611,8 @@ body.mode-field .balls-only { display: none !important; }
 .item[data-pattern="circle"] .angle-wrap,
 .item[data-pattern="infinity-h"] .angle-wrap,
 .item[data-pattern="infinity-v"] .angle-wrap,
+.item[data-pattern="fig8-h"] .angle-wrap,
+.item[data-pattern="fig8-v"] .angle-wrap,
 .item[data-pattern="rectangle"] .angle-wrap,
 .item[data-pattern="h-sweep"] .direction-wrap,
 .item[data-pattern="h-sweep"] .angle-wrap,
