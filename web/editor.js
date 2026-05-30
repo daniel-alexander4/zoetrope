@@ -105,9 +105,10 @@
       nameEl.textContent = item.name || PATTERN_LABELS[item.pattern] || item.pattern;
       node.querySelector('.color').value = item.color || '#ffffff';
       node.querySelector('.repeats').value = item.repeats ?? 1;
+      node.querySelector('.item-speed').value = item.speed ?? '';
       node.querySelector('.direction').value = item.direction || 'cw';
       node.querySelector('.angle').value = item.angleDeg ?? 37;
-      node.querySelector('.corner-radius').value = item.cornerRadius ?? 0.3;
+      node.querySelector('.corner-radius').value = item.cornerRadius ?? 0;
       node.querySelector('.start-corner').value = item.startCorner || 'tl';
       node.querySelector('.lanes').value = item.lanes ?? 3;
 
@@ -117,6 +118,13 @@
       });
       node.querySelector('.repeats').addEventListener('input', e => {
         item.repeats = +e.target.value;
+        markDirty();
+      });
+      node.querySelector('.item-speed').addEventListener('input', e => {
+        // Blank → follow the global speed (delete the override); a value pins
+        // this item's speed regardless of the global dial.
+        if (e.target.value === '') delete item.speed;
+        else item.speed = +e.target.value;
         markDirty();
       });
       node.querySelector('.direction').addEventListener('change', e => {

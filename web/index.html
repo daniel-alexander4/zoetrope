@@ -149,6 +149,7 @@
       <div class="row params">
         <input type="color" class="color">
         <label>Repeats <input type="number" class="repeats" min="1" max="100" step="1"></label>
+        <label title="Per-item speed on the 0–10 scale. Leave blank to follow the global speed; set a value to pin this item's speed regardless of the global dial.">Speed <input type="number" class="item-speed" min="0" max="10" step="0.1" placeholder="—"></label>
         <label class="direction-wrap">Direction
           <select class="direction">
             <option value="cw">CW</option>
@@ -170,7 +171,7 @@
         <label class="serpentine-wrap">Lanes
           <input type="number" class="lanes" min="2" max="8" step="1">
         </label>
-        <label class="iemt-wrap iemt-name-wrap">Name
+        <label class="iemt-wrap iemt-name-wrap" title="Custom label for this position-sequence card, so you can tell multiple sequences apart in the editor and now-playing.">Name
           <input type="text" class="iemt-name" placeholder="(custom label)">
         </label>
         <label class="iemt-wrap">Dwell s

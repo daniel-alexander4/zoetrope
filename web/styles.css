@@ -493,6 +493,13 @@ body.mode-field .balls-only { display: none !important; }
   padding: 8px 10px;
 }
 
+/* The steps row is also a .row, so the rule above (specificity 0,2,0) would
+   otherwise override .iemt-wrap's hide. Default-hide it here at equal
+   specificity (later in source); the position-sequence rule below re-shows it. */
+.item .iemt-steps-row {
+  display: none;
+}
+
 .item.drop-above {
   box-shadow: 0 -2px 0 0 var(--accent);
 }

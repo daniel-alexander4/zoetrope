@@ -94,10 +94,12 @@
   // full traversal, excluding any edge-linger dwell. The speed dial sets a
   // target ball pixel-speed, so the period is normalized by the pattern's
   // path length relative to the circle (periodFactor, built at load below) —
-  // every pattern then sweeps at the same speed for a given dial. Returns
-  // Infinity when paused. (A future per-item speed knob multiplies cps here.)
+  // every pattern then sweeps at the same speed for a given dial. A per-item
+  // `speed` overrides the global dial for that item; the transport speedMul
+  // still scales it at runtime. Returns Infinity when paused.
   function baseCycleSec(item, ctx) {
-    const cps = (Math.max(0, ctx.config.speed ?? 2) / 10) * (ctx.speedMul ?? 1);
+    const userSpeed = item.speed ?? ctx.config.speed ?? 2;
+    const cps = (Math.max(0, userSpeed) / 10) * (ctx.speedMul ?? 1);
     if (cps <= 0) return Infinity;
     return periodFactor(item) / cps;
   }
@@ -119,7 +121,7 @@
   // state snapshots from the client.
   function computeCycleSec(item, ctx) {
     if (isSequencePattern(item.pattern)) {
-      const userSpeed = Math.max(0, ctx.config.speed ?? 2);
+      const userSpeed = Math.max(0, item.speed ?? ctx.config.speed ?? 2);
       const speedScale = (userSpeed / 2) * (ctx.speedMul ?? 1);
       if (speedScale <= 0) return Infinity;
       return sequenceCycleSec(item) / speedScale;

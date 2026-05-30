@@ -73,8 +73,10 @@ pixel speed — each pattern's cycle is normalized by its path length so
 they all move at the same pace at a given setting (calibrated to the
 circle; exact on a 16:9 viewport). `ballSize` (pixels, global) applies to
 every item. `repeats` (per item) is how many cycles play before the
-playlist advances. The speed multiplier in the transport bar scales
-`speed` at runtime without persisting.
+playlist advances. A per-item `speed` (0–10) overrides the global dial for
+that one item; leave it blank to follow the global speed. The speed
+multiplier in the transport bar scales the effective speed at runtime
+without persisting.
 
 The `serpentine` pattern is a closed-loop raster scan. The ball sweeps
 across `lanes` horizontal lanes (2–8, default 3), dropping into the next

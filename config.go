@@ -43,11 +43,16 @@ type FieldConfig struct {
 
 type PlaylistItem struct {
 	Pattern   string  `json:"pattern"`
-	Name      string  `json:"name,omitempty"` // optional human-readable label (overrides the pattern default in the editor / now-playing)
+	Name      string  `json:"name,omitempty"`  // optional human-readable label (overrides the pattern default in the editor / now-playing)
 	Color     string  `json:"color"`
 	Repeats   int     `json:"repeats"`
+	Speed     float64 `json:"speed,omitempty"` // per-item speed override on the 0–10 scale; absent → follow the global config.speed
 	Direction string  `json:"direction,omitempty"`
 	AngleDeg  float64 `json:"angleDeg,omitempty"`
+	// Serpentine patterns only:
+	Lanes        int     `json:"lanes,omitempty"`        // number of down-lanes (2–8); absent → 3
+	CornerRadius float64 `json:"cornerRadius,omitempty"` // U-turn roundness 0–1; absent → 0 (square)
+	StartCorner  string  `json:"startCorner,omitempty"` // 'tl' or 'tr'; absent → 'tl'
 	// Position-sequence patterns only:
 	Steps      []SequenceStep `json:"steps,omitempty"`
 	DwellSec   float64        `json:"dwellSec,omitempty"`   // default per-step dwell time (seconds); 0 → 1.5s fallback in the engine
