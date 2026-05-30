@@ -25,15 +25,45 @@
     return p === 'position-sequence';
   }
 
-  // Serpentine lane count, clamped to [2, 8]. Both the renderer and
-  // computeCycleSec read it from here so the bounds can't drift. The path
-  // length grows ~linearly with lanes, so computeCycleSec scales the period
-  // by lanes / SERPENTINE_LANE_REF to keep linear ball speed lane-invariant;
-  // the reference is the default (3), so 3-lane playlists are unaffected.
+  // Serpentine lane count, clamped to [2, 8]. Both the renderer and the
+  // period table read it from here so the bounds can't drift.
   const SERPENTINE_LANE_REF = 3;
   function serpentineLanes(item) {
     return Math.max(2, Math.min(8, Math.floor(item.lanes ?? 3)));
   }
+
+  // Serpentine path geometry for an inner box (half-width W, half-height H),
+  // N lanes, and a cornerRadius in [0,1]. Single source for the segment
+  // lengths the renderer walks AND the totalLen the period scaling needs.
+  function serpentineGeom(W, H, N, cornerRadius) {
+    const step = (2 * H) / (2 * N);
+    const round = Math.min(1, Math.max(0, cornerRadius ?? 0));
+    const r = Math.max(0, round * Math.min(step / 2, W / 2));
+    const laneLen = Math.max(0, 2 * (W - r));
+    const arcLen = (Math.PI / 2) * r;
+    const turn1Len = 2 * arcLen + Math.max(0, step - 2 * r);
+    const turn2Len = 2 * arcLen + Math.max(0, 2 * step - 2 * r);
+    const totalLen = 2 * N * laneLen + (2 * N - 2) * turn2Len + 2 * turn1Len;
+    return { step, r, laneLen, arcLen, turn1Len, turn2Len, totalLen };
+  }
+
+  // The ball moves at uniform arc-length speed, so its perceived speed is
+  // totalLen/period — and totalLen grows with lanes. To hold speed constant
+  // as lanes change, computeCycleSec scales the period by the path length
+  // relative to the 3-lane reference. The ratio is measured on a fixed 16:9
+  // reference box (not the live viewport) so the client and the manager
+  // mirror compute the same period and stay frame-synced. It's exact on 16:9
+  // and within ~1% across landscape; portrait keeps a small residual that no
+  // viewport-independent period can remove. cornerRadius shifts the ratio
+  // <1%, so the table ignores it (uses 0).
+  const SERPENTINE_PERIOD_FACTOR = (() => {
+    const refW = (1920 - 80) / 2 - 8; // 16:9 viewport at the default ball size
+    const refH = (1080 - 80) / 2 - 8;
+    const base = serpentineGeom(refW, refH, SERPENTINE_LANE_REF, 0).totalLen;
+    const tbl = {};
+    for (let n = 2; n <= 8; n++) tbl[n] = serpentineGeom(refW, refH, n, 0).totalLen / base;
+    return tbl;
+  })();
 
   // ---- Gaze grid (position-sequence patterns) ---------------------------
   // Named targets on a 3×3 grid: 8 cardinals/diagonals + center. Coordinates
@@ -108,7 +138,7 @@
     const linger = ctx.config.lingerSec ?? 0;
     let baseCycle = 1 / cps;
     if (item.pattern === 'serpentine') {
-      baseCycle *= serpentineLanes(item) / SERPENTINE_LANE_REF;
+      baseCycle *= SERPENTINE_PERIOD_FACTOR[serpentineLanes(item)];
     }
     return isLinearPattern(item.pattern) && linger > 0
       ? baseCycle + 2 * linger
@@ -208,9 +238,8 @@
       const W = Math.max(1, (vp.w - 2 * m) / 2 - 8);
       const H = Math.max(1, (vp.h - 2 * m) / 2 - 8);
       const N = serpentineLanes(item);
-      const step = (2 * H) / (2 * N);
-      const round = Math.min(1, Math.max(0, item.cornerRadius ?? 0));
-      const r = Math.max(0, round * Math.min(step / 2, W / 2));
+      const { step, r, laneLen, arcLen, turn1Len, turn2Len, totalLen } =
+        serpentineGeom(W, H, N, item.cornerRadius);
       const cx = vp.w / 2;
       const cy = vp.h / 2;
 
@@ -219,11 +248,6 @@
       let u = (sign * t) % 1;
       if (u < 0) u += 1;
 
-      const laneLen = Math.max(0, 2 * (W - r));
-      const arcLen = (Math.PI / 2) * r;
-      const turn1Len = 2 * arcLen + Math.max(0, step - 2 * r);
-      const turn2Len = 2 * arcLen + Math.max(0, 2 * step - 2 * r);
-      const totalLen = 2 * N * laneLen + (2 * N - 2) * turn2Len + 2 * turn1Len;
       if (totalLen <= 0) return { x: cx, y: cy };
 
       let s = u * totalLen;
