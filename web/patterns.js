@@ -25,6 +25,16 @@
     return p === 'position-sequence';
   }
 
+  // Serpentine lane count, clamped to [2, 8]. Both the renderer and
+  // computeCycleSec read it from here so the bounds can't drift. The path
+  // length grows ~linearly with lanes, so computeCycleSec scales the period
+  // by lanes / SERPENTINE_LANE_REF to keep linear ball speed lane-invariant;
+  // the reference is the default (3), so 3-lane playlists are unaffected.
+  const SERPENTINE_LANE_REF = 3;
+  function serpentineLanes(item) {
+    return Math.max(2, Math.min(8, Math.floor(item.lanes ?? 3)));
+  }
+
   // ---- Gaze grid (position-sequence patterns) ---------------------------
   // Named targets on a 3×3 grid: 8 cardinals/diagonals + center. Coordinates
   // are normalized to [-1, +1]; the actual pixel position is computed per
@@ -96,7 +106,10 @@
     const cps = (userSpeed / 10) * speedMul;
     if (cps <= 0) return Infinity;
     const linger = ctx.config.lingerSec ?? 0;
-    const baseCycle = 1 / cps;
+    let baseCycle = 1 / cps;
+    if (item.pattern === 'serpentine') {
+      baseCycle *= serpentineLanes(item) / SERPENTINE_LANE_REF;
+    }
     return isLinearPattern(item.pattern) && linger > 0
       ? baseCycle + 2 * linger
       : baseCycle;
@@ -194,7 +207,7 @@
       const m = ctx.config.ballSize / 2;
       const W = Math.max(1, (vp.w - 2 * m) / 2 - 8);
       const H = Math.max(1, (vp.h - 2 * m) / 2 - 8);
-      const N = Math.max(2, Math.min(8, Math.floor(item.lanes ?? 3)));
+      const N = serpentineLanes(item);
       const step = (2 * H) / (2 * N);
       const round = Math.min(1, Math.max(0, item.cornerRadius ?? 0));
       const r = Math.max(0, round * Math.min(step / 2, W / 2));
