@@ -1,7 +1,11 @@
 // manage.js: the /manage page — the hosting console. Hosting auto-engages
 // when this page loads in standalone mode (the page IS the hosting
-// surface; no Landing CTA). The bottom HUD selects between four in-page
-// views (toggled by body class, no routing):
+// surface; no Landing CTA). The bottom HUD has, left-to-right:
+//   - mode pills (Standalone / Client / Hosting) — same component as on
+//     the ball page; clicking a non-active pill flips network mode and
+//     usually navigates away from /manage (only Hosting stays here).
+//   - view tabs (Loopback / Admin / Session) — select which hosting
+//     view is active (body class, no routing):
 //   - view-loopback: dev-only synthetic session. body.loopback-split is
 //     on; /?loopback shows in a right-half iframe; the left half shows
 //     the same cards as view-session so the dev can drive the playlist
@@ -56,53 +60,25 @@
       if (!r.ok) {
         const text = (await r.text()).trim() || ('HTTP ' + r.status);
         console.warn('verb', verb.type, r.status, text);
-        flashSessionError(fp, verb.type + ' failed: ' + text);
+        showSessionBanner(verb.type + ' failed: ' + text, 'error');
       }
     } catch (err) {
       console.error('sendSessionVerb:', err);
-      flashSessionError(fp, (verb && verb.type ? verb.type + ' failed: ' : 'verb failed: ') + (err.message || err));
+      showSessionBanner((verb && verb.type ? verb.type + ' failed: ' : 'verb failed: ') + (err.message || err), 'error');
     }
-  }
-
-  // flashSessionError shows a per-card inline error that auto-clears.
-  // Replaces the silent console.warn so a misfire (verb during a
-  // disconnect, server-side reject) is actually visible to the
-  // practitioner.
-  const SESSION_ERROR_TIMERS = new WeakMap();
-  function flashSessionError(fp, message) {
-    const entry = state.sessions.get(fp);
-    if (!entry) return;
-    const el = entry.node.querySelector('.session-error');
-    if (!el) return;
-    el.textContent = message;
-    el.hidden = false;
-    const prev = SESSION_ERROR_TIMERS.get(el);
-    if (prev) clearTimeout(prev);
-    SESSION_ERROR_TIMERS.set(el, setTimeout(() => {
-      el.hidden = true;
-      el.textContent = '';
-      SESSION_ERROR_TIMERS.delete(el);
-    }, 4000));
   }
 
   // ---- Page state -----------------------------------------------------
 
   // setView toggles the active hosting view by swapping body classes.
   // CSS + per-card data-views filters do the show/hide; no DOM rebuild,
-  // no fetch. Idempotent. Leaving Admin clears body.show-info so the
-  // identity card doesn't surprise the user on their next Admin visit.
-  // Note: setView only updates the view — mode flips (loopback vs real)
-  // are owned by the HUD tab handlers, which call setView after the
-  // server-side mode change resolves.
+  // no fetch. Idempotent. Mode flips (loopback vs real) are owned by
+  // the HUD tab handlers, which call setView after the server-side
+  // mode change resolves.
   function setView(view) {
     state.view = view;
     document.body.classList.remove('view-loopback', 'view-admin', 'view-session', 'view-client');
     document.body.classList.add('view-' + view);
-    if (view !== 'admin') {
-      document.body.classList.remove('show-info');
-      const info = document.getElementById('btn-show-info');
-      if (info) info.setAttribute('aria-pressed', 'false');
-    }
     if (view !== 'client') {
       state.clientID = null;
     }
@@ -112,18 +88,29 @@
     if (loopback) loopback.setAttribute('aria-selected', view === 'loopback' ? 'true' : 'false');
     if (admin) admin.setAttribute('aria-selected', view === 'admin' ? 'true' : 'false');
     if (session) session.setAttribute('aria-selected', view === 'session' ? 'true' : 'false');
-    updateTopbarMintVisibility();
+    updateMintButtonVisibility();
+    updateModePills();
     updateEditorSpan();
   }
 
-  // Topbar mint button is visible whenever hosting (real or loopback) is
+  // HUD mint button is visible whenever hosting (real or loopback) is
   // engaged. The click handler is context-aware: on view-loopback it
   // copies the /?loopback URL (the iframe's URL); on real-hosting views
   // it mints a fresh connection URL.
-  function updateTopbarMintVisibility() {
-    const btn = document.getElementById('topbar-mint-url');
+  function updateMintButtonVisibility() {
+    const btn = document.getElementById('hud-mint-url');
     if (!btn) return;
     btn.hidden = state.nmode !== 'manager';
+  }
+
+  // Mode pills mirror the network mode; on /manage the Hosting pill is
+  // the only one that's "you're already here" — the other two require
+  // tearing hosting down before navigating away.
+  const PILL_TO_MODE = { standalone: 'standalone', client: 'client', hosting: 'manager' };
+  function updateModePills() {
+    document.querySelectorAll('#mi-hud .mpill').forEach(p => {
+      p.classList.toggle('active', PILL_TO_MODE[p.dataset.mode] === state.nmode);
+    });
   }
 
   // isLoopbackEngaged peeks at sessions to detect the synthetic dev
@@ -158,23 +145,23 @@
 
     const library = document.getElementById('library-card');
     const editor = document.getElementById('editor-section');
-    const sessions = document.getElementById('sessions');
-    const stopBtn = document.getElementById('btn-stop-hosting');
 
     if (mode === 'manager') {
       library.hidden = false;
       editor.hidden = false;
-      sessions.hidden = false;
-      stopBtn.hidden = false;
       const audioCard = document.getElementById('audio-card');
       if (audioCard) audioCard.hidden = false;
+      const filesCard = document.getElementById('files-card');
+      if (filesCard) filesCard.hidden = false;
+      const mirrorCard = document.getElementById('mirror-card');
+      if (mirrorCard) mirrorCard.hidden = false;
       const clientsCard = document.getElementById('clients-card');
       if (clientsCard) clientsCard.hidden = false;
       refreshClientsList();
       document.getElementById('practitioner-fp').dataset.full = snap.practitioner_fp || '';
       document.getElementById('practitioner-ep').textContent = snap.public_endpoint || '—';
       refreshIdentityDisplay();
-      renderSessions(snap.sessions || []);
+      loadSessions(snap.sessions || []);
       // First paint: settle on a default view that reflects current state.
       // Loopback session present → view-loopback (the iframe is already
       // engaged server-side; mirror that in the UI). Otherwise → Admin.
@@ -187,22 +174,25 @@
     } else { // standalone
       library.hidden = true;
       editor.hidden = true;
-      sessions.hidden = true;
-      stopBtn.hidden = true;
       const audioCard = document.getElementById('audio-card');
       if (audioCard) audioCard.hidden = true;
+      const filesCard = document.getElementById('files-card');
+      if (filesCard) filesCard.hidden = true;
+      const mirrorCard = document.getElementById('mirror-card');
+      if (mirrorCard) mirrorCard.hidden = true;
       const clientsCard = document.getElementById('clients-card');
       if (clientsCard) clientsCard.hidden = true;
       if (window.zoetropeAudio && window.zoetropeAudio.getState().state !== 'idle') {
         window.zoetropeAudio.hangup();
       }
       state.sessions.clear();
-      document.getElementById('sessions-list').innerHTML = '';
       document.getElementById('start-error').textContent = '';
       hideLoopbackIframe();
     }
     state.initialModeApplied = true;
-    updateTopbarMintVisibility();
+    updateMintButtonVisibility();
+    updateModePills();
+    renderSessionView();
     updateEditorSpan();
   }
 
@@ -257,31 +247,42 @@
   });
 
   // ---- "Connection URL generated" banner ------------------------------
+  // The HUD mint button writes directly into #generated-banner with its
+  // own message; this timer coordinates the auto-hide so a rapid
+  // double-click doesn't leave a stale banner behind.
 
   let generatedBannerTimer = null;
-  function flashGeneratedBanner() {
-    const b = document.getElementById('generated-banner');
-    b.textContent = 'Connection URL generated — copy it below and share with your client.';
-    b.hidden = false;
-    if (generatedBannerTimer) clearTimeout(generatedBannerTimer);
-    generatedBannerTimer = setTimeout(() => { b.hidden = true; }, 6000);
+
+  // ---- Sessions (state only) ----------------------------------------
+  //
+  // state.sessions is a Map<fp, { snap, url, firewallTimer }> — no DOM.
+  // The Session view has ONE set of controls (#session-controls,
+  // #audio-start-call, etc.) that target activeSessionFP(). Single-
+  // client product: first connected real session wins; loopback is the
+  // fallback when no real session is connected.
+
+  function activeSessionFP() {
+    for (const [fp, entry] of state.sessions) {
+      if (fp === 'loopback') continue;
+      if (entry.snap.connected) return fp;
+    }
+    const lb = state.sessions.get('loopback');
+    return lb && lb.snap.connected ? 'loopback' : null;
   }
 
-  // ---- Sessions list -------------------------------------------------
-
-  function renderSessions(sessions) {
-    const list = document.getElementById('sessions-list');
-    list.innerHTML = '';
+  function loadSessions(sessions) {
+    for (const [, entry] of state.sessions) {
+      if (entry.firewallTimer) clearTimeout(entry.firewallTimer);
+    }
     state.sessions.clear();
-    for (const sess of sessions) addSessionToList(sess);
+    for (const sess of sessions || []) addSession(sess);
+    renderSessionView();
   }
 
   // resolveSessionLabel — single source of truth for "what to call this
-  // session" on the card. Bound-to-a-client sessions get the client's name
-  // (looked up against the cached state.clients list). Unbound sessions
-  // fall back to a client-supplied hello label, or the fingerprint prefix.
-  // Called from addSessionToList, setSessionLabel, and applyResolvedLabels
-  // (which re-runs after refreshClientsList fetches fresh names).
+  // session" in banners / call dialogs. Bound-to-a-client sessions get
+  // the client's name; unbound sessions fall back to the client-
+  // supplied hello label, or the fingerprint prefix.
   function resolveSessionLabel(snap) {
     if (snap.client_id) {
       const c = state.clients.find(c => c.id === snap.client_id);
@@ -289,165 +290,164 @@
     }
     return snap.label || (snap.fingerprint || '').slice(0, 12);
   }
-  function applyResolvedLabels() {
-    for (const [, entry] of state.sessions) {
-      entry.node.querySelector('.session-label').textContent = resolveSessionLabel(entry.snap);
-    }
-  }
 
-  // Firewall-hint nudge: if a session URL has been minted for this long
-  // without anyone connecting, the most likely cause is a local firewall
-  // blocking inbound on 38130 (router-NAT a distant second). Halfway
-  // through the URL's 10-minute lifetime so the hint still leaves time
-  // to act on it. Compared against created_at so a page reload doesn't
-  // restart the timer.
-  const FIREWALL_HINT_MS = 5 * 60 * 1000;
-
-  function armFirewallHint(entry) {
-    if (entry.everConnected || entry.firewallTimer) return;
-    if (entry.snap && entry.snap.connected) return;
-    const created = entry.snap && entry.snap.created_at
-      ? new Date(entry.snap.created_at).getTime()
-      : Date.now();
-    const elapsed = Date.now() - created;
-    if (elapsed >= FIREWALL_HINT_MS) {
-      showFirewallHint(entry);
-      return;
-    }
-    entry.firewallTimer = setTimeout(() => {
-      entry.firewallTimer = null;
-      if (!entry.everConnected) showFirewallHint(entry);
-    }, FIREWALL_HINT_MS - elapsed);
-  }
-
-  function clearFirewallHint(entry) {
-    if (entry.firewallTimer) {
-      clearTimeout(entry.firewallTimer);
-      entry.firewallTimer = null;
-    }
-    const hint = entry.node.querySelector('.session-firewall-hint');
-    if (hint) hint.hidden = true;
-  }
-
-  function showFirewallHint(entry) {
-    const hint = entry.node.querySelector('.session-firewall-hint');
-    if (hint) hint.hidden = false;
-  }
-
-  function addSessionToList(snap, url) {
+  function addSession(snap, url) {
     const existing = state.sessions.get(snap.fingerprint);
     if (existing) {
-      if (url) existing.node.querySelector('.session-url').value = url;
+      if (url) existing.url = url;
+      existing.snap = snap;
+      renderSessionView();
       return;
     }
-    const list = document.getElementById('sessions-list');
-    const tmpl = document.getElementById('session-template');
-    const node = tmpl.content.firstElementChild.cloneNode(true);
-    node.dataset.fp = snap.fingerprint;
-    node.querySelector('.session-label').textContent = resolveSessionLabel(snap);
-    const statusEl = node.querySelector('.session-status');
-    statusEl.textContent = snap.connected ? 'connected' : 'waiting';
-    statusEl.dataset.status = snap.connected ? 'connected' : 'waiting';
-    if (url) node.querySelector('.session-url').value = url;
-    wireSessionNode(node, snap.fingerprint);
-    wireFocusOnSessionNode(node, snap.fingerprint);
-    list.appendChild(node);
-    const entry = {
-      node, snap,
-      everConnected: !!snap.connected,
-      firewallTimer: null,
-      connectedAt: snap.connected ? performance.now() : null,
-    };
+    const entry = { snap, url, firewallTimer: null };
     state.sessions.set(snap.fingerprint, entry);
-    // Apply the disable-on-disconnect state for the freshly-rendered
-    // controls so a waiting card shows its transport row grayed out.
-    setSessionConnected(node, !!snap.connected);
-    armFirewallHint(entry);
+    if (!snap.connected && snap.fingerprint !== 'loopback') {
+      armFirewallHint(entry);
+    }
+    renderSessionView();
   }
 
-  function removeSessionFromList(fp) {
+  function removeSession(fp) {
     const entry = state.sessions.get(fp);
     if (!entry) return;
-    clearFirewallHint(entry);
-    entry.node.remove();
+    if (entry.firewallTimer) clearTimeout(entry.firewallTimer);
     state.sessions.delete(fp);
-  }
-
-  function updateSessionStatus(fp, status) {
-    const entry = state.sessions.get(fp);
-    if (!entry) return;
-    const el = entry.node.querySelector('.session-status');
-    el.textContent = status;
-    el.dataset.status = status;
-    // Keep entry.snap.connected synced so findLiveSessionForClient (in
-    // the Files card) reflects connection changes without a full
-    // /api/mode/state refetch.
-    entry.snap.connected = (status === 'connected');
-    setSessionConnected(entry.node, status === 'connected');
+    clearSessionBanner('firewall:' + fp);
+    renderSessionView();
     updateFilesSendState();
-    if (status === 'connected') {
-      // First successful pair proves the route works; the firewall hint
-      // is suppressed for this session for its remaining lifetime even
-      // after a later disconnect (disconnect != firewall blocking).
-      entry.everConnected = true;
-      clearFirewallHint(entry);
-    }
-  }
-
-  // setSessionConnected toggles the disabled state of every transport-style
-  // control on a session card. When the client is disconnected, clicks
-  // round-trip to the server and 400 because the WS isn't paired — the
-  // practitioner can't tell anything happened. Disabling at the UI layer
-  // is the honest signal that the controls aren't operative right now.
-  function setSessionConnected(node, connected) {
-    const controls = node.querySelectorAll(
-      '.session-controls button[data-verb], .session-picker, .ctl-speed, .session-call, .session-attach'
-    );
-    for (const el of controls) {
-      el.disabled = !connected;
-    }
   }
 
   function setSessionLabel(fp, label) {
     const entry = state.sessions.get(fp);
     if (!entry || !label) return;
-    // Stash the client-supplied hello label on the snapshot so a later
-    // refreshClientsList that doesn't resolve a name still has this as
-    // a better-than-fp-prefix fallback.
     entry.snap.label = label;
-    entry.node.querySelector('.session-label').textContent = resolveSessionLabel(entry.snap);
   }
 
-  function populateSessionPicker(fp, payload) {
+  function updateSessionStatus(fp, status) {
     const entry = state.sessions.get(fp);
-    if (!entry || !payload?.sequences) return;
-    const sel = entry.node.querySelector('.session-picker');
-    // Preserve the current selection across rebuilds so the "currently
-    // playing" mark stays put when the sequences list re-arrives (e.g.,
-    // on rejoin) with the same shape.
-    const previous = sel.value;
-    sel.innerHTML = '<option value="">Jump to…</option>';
-    for (const seq of payload.sequences) {
-      const opt = document.createElement('option');
-      opt.value = String(seq.index);
-      opt.textContent = `${seq.index + 1}. ${seq.label}`;
-      sel.appendChild(opt);
+    if (!entry) return;
+    entry.snap.status = status;
+    entry.snap.connected = (status === 'connected');
+    if (entry.snap.connected) {
+      if (entry.firewallTimer) {
+        clearTimeout(entry.firewallTimer);
+        entry.firewallTimer = null;
+      }
+      clearSessionBanner('firewall:' + fp);
     }
-    if (previous !== '' && Array.prototype.some.call(sel.options, o => o.value === previous)) {
-      sel.value = previous;
+    renderSessionView();
+    updateFilesSendState();
+  }
+
+  // ---- Firewall hint --------------------------------------------------
+  //
+  // If a minted URL stays unconnected for 5 minutes, the most likely
+  // cause is the local firewall blocking inbound on 38130. Surface it
+  // in the session banner so the practitioner sees a concrete next
+  // step rather than waiting indefinitely. Cleared on connect or
+  // session removal.
+  const FIREWALL_HINT_MS = 5 * 60 * 1000;
+  function armFirewallHint(entry) {
+    const created = entry.snap.created_at
+      ? new Date(entry.snap.created_at).getTime()
+      : Date.now();
+    const elapsed = Date.now() - created;
+    const fire = () => {
+      entry.firewallTimer = null;
+      if (entry.snap.connected) return;
+      showSessionBanner(
+        '5 minutes since this URL was generated and no client has connected. ' +
+        'Most often this means your local firewall (Windows Defender / macOS / ufw) ' +
+        'is blocking inbound on port 38130. Less commonly: the router NAT isn\'t ' +
+        'forwarding 38130 to this machine.',
+        'warning',
+        { persistent: true, key: 'firewall:' + entry.snap.fingerprint },
+      );
+    };
+    if (elapsed >= FIREWALL_HINT_MS) fire();
+    else entry.firewallTimer = setTimeout(fire, FIREWALL_HINT_MS - elapsed);
+  }
+
+  // ---- Session banner -------------------------------------------------
+  //
+  // Single non-blocking message strip at the top of Session view.
+  // Transient (errors) auto-clear after 4s; persistent (firewall hint)
+  // stays until clearSessionBanner(key) is called.
+  const SESSION_BANNER_TRANSIENT_MS = 4000;
+  let sessionBannerTimer = null;
+  let sessionBannerKey = null;
+  function showSessionBanner(message, kind, opts) {
+    const el = document.getElementById('session-banner');
+    if (!el) return;
+    el.textContent = message;
+    el.dataset.kind = kind || 'info';
+    el.hidden = false;
+    if (sessionBannerTimer) clearTimeout(sessionBannerTimer);
+    sessionBannerKey = (opts && opts.key) || null;
+    if (opts && opts.persistent) {
+      sessionBannerTimer = null;
+      return;
+    }
+    sessionBannerTimer = setTimeout(() => {
+      el.hidden = true;
+      el.textContent = '';
+      sessionBannerKey = null;
+      sessionBannerTimer = null;
+    }, SESSION_BANNER_TRANSIENT_MS);
+  }
+  function clearSessionBanner(key) {
+    if (key && sessionBannerKey !== key) return;
+    if (sessionBannerTimer) { clearTimeout(sessionBannerTimer); sessionBannerTimer = null; }
+    sessionBannerKey = null;
+    const el = document.getElementById('session-banner');
+    if (el) { el.hidden = true; el.textContent = ''; }
+  }
+
+  // ---- Session view: "are we live?" --------------------------------
+  //
+  // Single owner of the connected-vs-not predicate. Disables the
+  // singleton play controls + Start-call when no real client is
+  // connected, drives the topbar label, and refreshes the Files-card
+  // inbox onto the active client when the active session flips.
+  // Called on every session add/remove/status change.
+  let lastActiveFP = null;
+  function renderSessionView() {
+    const fp = activeSessionFP();
+    const controls = document.getElementById('session-controls');
+    if (controls) {
+      for (const el of controls.querySelectorAll('button, select, input')) {
+        el.disabled = !fp;
+      }
+    }
+    const startCall = document.getElementById('audio-start-call');
+    if (startCall) startCall.disabled = !fp;
+    const label = document.getElementById('page-label');
+    if (label) {
+      label.textContent = state.nmode === 'manager'
+        ? (fp ? 'Hosting session' : 'Awaiting client')
+        : '';
+    }
+    if (fp !== lastActiveFP) {
+      lastActiveFP = fp;
+      refreshFilesInbox(activeClientID());
     }
   }
+
+  // ---- Session detail + picker (from session-state SSE) -------------
+  //
+  // Both write the singleton DOM elements and only render when fp ===
+  // activeSessionFP(); a stray non-active session-state event for a
+  // second client (shouldn't happen in single-client mode but is
+  // possible during disconnect/reconnect overlap) is ignored.
 
   function updateSessionDetail(fp, payload) {
     const entry = state.sessions.get(fp);
     if (!entry || !payload) return;
+    if (fp !== activeSessionFP()) return;
     const playing = payload.playing ? '▶' : '⏸';
     const idx = payload.item_idx ?? 0;
     const rep = payload.repeat_idx ?? 0;
     const pat = payload.pattern || '?';
-    // Look up the item's repeat-total + percent through-the-cycle from
-    // the manager's own config + the snapshot's `t`. Falls back to "rep N"
-    // when config isn't loaded yet or item_idx is out of range.
     let repText = `rep ${rep + 1}`;
     const playlists = state.config?.playlists || [];
     const active = playlists.find(p => p.name === state.config?.activePlaylist) || playlists[0];
@@ -459,18 +459,11 @@
       const step = (payload.step_idx ?? 0) + 1;
       detail += `, step ${step}/${payload.step_count}`;
     }
-    // Client-side safety pause: the practitioner needs to see this so
-    // they understand their transport verbs are queued, not applied,
-    // until the client resumes.
-    if (payload.client_paused) {
-      detail += ' · 🛑 client paused';
-    }
-    entry.node.querySelector('.session-detail').textContent = detail;
-    setStepControlsMode(entry.node, pat === 'position-sequence');
-    // Sync the Jump-to picker to the currently-playing item — single
-    // source of truth for "what's playing" is the state event, so the
-    // picker just reflects it.
-    const picker = entry.node.querySelector('.session-picker');
+    if (payload.client_paused) detail += ' · 🛑 client paused';
+    const el = document.getElementById('session-detail');
+    if (el) el.textContent = detail;
+    setStepControlsMode(pat === 'position-sequence');
+    const picker = document.getElementById('session-picker');
     const wantValue = String(idx);
     if (picker && picker.value !== wantValue
         && Array.prototype.some.call(picker.options, o => o.value === wantValue)) {
@@ -480,12 +473,14 @@
 
   // setStepControlsMode swaps the back/advance buttons between playlist-
   // item level (continuous patterns) and position-step level (position-
-  // sequence patterns). Same buttons, different labels + dispatched
-  // verbs — the click handler in wireSessionNode reads dataset.verb at
-  // click time so updating it here is enough.
-  function setStepControlsMode(node, isSequence) {
-    const back = node.querySelector('.ctl-back');
-    const advance = node.querySelector('.ctl-advance');
+  // sequence patterns). The click handler in wireSessionControls reads
+  // dataset.verb at click time, so updating it here is enough.
+  function setStepControlsMode(isSequence) {
+    const container = document.getElementById('session-controls');
+    if (!container) return;
+    const back = container.querySelector('.ctl-back');
+    const advance = container.querySelector('.ctl-advance');
+    if (!back || !advance) return;
     if (isSequence) {
       back.textContent = '← Prev pos';
       back.title = 'Previous position';
@@ -503,134 +498,122 @@
     }
   }
 
-  function wireSessionNode(node, fp) {
-    node.querySelector('.session-remove').addEventListener('click', () => {
-      confirmAction(
-        'Remove this session? The connection URL becomes invalid and any connected client is disconnected.',
-        () => csrfFetch('/api/sessions/' + fp, { method: 'DELETE' }).catch(()=>{}),
-      );
-    });
-    node.querySelector('.session-copy').addEventListener('click', () => {
-      const ta = node.querySelector('.session-url');
-      if (!ta.value) return;
-      ta.select();
-      navigator.clipboard.writeText(ta.value).catch(()=>{});
-    });
-    node.querySelectorAll('.session-controls button[data-verb]').forEach(btn => {
-      btn.addEventListener('click', () => sendSessionVerb(fp, { type: btn.dataset.verb }));
-    });
-    node.querySelector('.session-picker').addEventListener('change', e => {
-      if (e.target.value === '') return;
-      const idx = parseInt(e.target.value, 10);
-      if (Number.isInteger(idx)) sendSessionVerb(fp, { type: 'set-sequence', index: idx });
-      // No reset-to-placeholder — the next state event will sync the
-      // selection to whatever the client lands on. updateSessionDetail
-      // is the SoT for "what's playing" in the picker.
-    });
-    // Speed slider: live tempo multiplier. Fires on 'change' (release),
-    // not 'input' (drag), so we don't spam the WS with intermediate
-    // values. Visual readout updates on 'input' for instant feedback.
-    const speed = node.querySelector('.ctl-speed');
-    const speedValue = node.querySelector('.ctl-speed-value');
-    function renderSpeedValue() {
-      const v = Number(speed.value);
-      speedValue.textContent = (Number.isInteger(v) ? v : v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')) + '×';
+  function populateSessionPicker(fp, payload) {
+    if (fp !== activeSessionFP()) return;
+    if (!payload?.sequences) return;
+    const sel = document.getElementById('session-picker');
+    if (!sel) return;
+    const previous = sel.value;
+    sel.innerHTML = '<option value="">Jump to…</option>';
+    for (const seq of payload.sequences) {
+      const opt = document.createElement('option');
+      opt.value = String(seq.index);
+      opt.textContent = `${seq.index + 1}. ${seq.label}`;
+      sel.appendChild(opt);
     }
-    speed.addEventListener('input', renderSpeedValue);
-    speed.addEventListener('change', () => {
+    if (previous !== '' && Array.prototype.some.call(sel.options, o => o.value === previous)) {
+      sel.value = previous;
+    }
+  }
+
+  // ---- Singleton session-control wiring ------------------------------
+  //
+  // Run once at init(). Buttons route their verb to activeSessionFP().
+  // When no active session, renderSessionView disables them all so
+  // clicks are impossible.
+
+  function wireSessionControls() {
+    const container = document.getElementById('session-controls');
+    if (container) {
+      container.querySelectorAll('button[data-verb]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const fp = activeSessionFP();
+          if (!fp) return;
+          sendSessionVerb(fp, { type: btn.dataset.verb });
+        });
+      });
+    }
+    const picker = document.getElementById('session-picker');
+    if (picker) {
+      picker.addEventListener('change', e => {
+        const fp = activeSessionFP();
+        if (!fp || e.target.value === '') return;
+        const idx = parseInt(e.target.value, 10);
+        if (Number.isInteger(idx)) sendSessionVerb(fp, { type: 'set-sequence', index: idx });
+      });
+    }
+    const speed = document.getElementById('session-speed');
+    const speedValue = document.getElementById('session-speed-value');
+    if (speed && speedValue) {
+      function renderSpeedValue() {
+        const v = Number(speed.value);
+        speedValue.textContent = (Number.isInteger(v) ? v : v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')) + '×';
+      }
+      speed.addEventListener('input', renderSpeedValue);
+      speed.addEventListener('change', () => {
+        renderSpeedValue();
+        const fp = activeSessionFP();
+        if (!fp) return;
+        const mul = Number(speed.value);
+        if (Number.isFinite(mul) && mul > 0) sendSessionVerb(fp, { type: 'set-speed', mul });
+      });
       renderSpeedValue();
-      const mul = Number(speed.value);
-      if (Number.isFinite(mul) && mul > 0) {
-        sendSessionVerb(fp, { type: 'set-speed', mul });
-      }
-    });
-    renderSpeedValue();
-    const inboxHost = node.querySelector('.session-inbox');
-    const uploadURL = '/api/sessions/' + fp + '/transfer';
-    async function sendFileForSession(file) {
-      try {
-        const res = await window.zoetropeTransfer.sendFile(uploadURL, file);
-        if (res && res.transfer_id) {
-          window.zoetropeTransfer.beginOutbound(inboxHost, {
-            id: res.transfer_id,
-            name: res.name || file.name,
-            sizeBytes: res.size_bytes ?? file.size,
-          });
-        }
-      } catch (err) {
-        console.warn('send failed:', err);
-        alert('Send failed: ' + err.message);
-      }
     }
-    const attachBtn = node.querySelector('.session-attach');
-    attachBtn.addEventListener('click', async () => {
-      attachBtn.disabled = true;
-      try {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.style.display = 'none';
-        input.addEventListener('change', async () => {
-          const file = input.files && input.files[0];
-          input.remove();
-          if (file) await sendFileForSession(file);
-        }, { once: true });
-        document.body.appendChild(input);
-        input.click();
-      } finally {
-        attachBtn.disabled = false;
+    const startCall = document.getElementById('audio-start-call');
+    if (startCall) {
+      startCall.addEventListener('click', async () => {
+        const audio = window.zoetropeAudio;
+        if (!audio) return;
+        const fp = activeSessionFP();
+        if (!fp) return;
+        if (audio.getState().state !== 'idle') {
+          alert('Already in a call.');
+          return;
+        }
+        const entry = state.sessions.get(fp);
+        const label = entry ? resolveSessionLabel(entry.snap) : fp.slice(0, 12);
+        try {
+          await audio.startCall(fp, label);
+        } catch (err) {
+          console.warn('call failed:', err);
+          alert('Call failed: ' + err.message);
+        }
+      });
+    }
+    // Keyboard shortcuts targeting the active session: Space toggles
+    // play/pause; ← / → step pattern or position depending on the
+    // current pattern. Bails when the user is typing in an
+    // input/select/textarea so a text-field keystroke doesn't move the
+    // ball.
+    document.addEventListener('keydown', e => {
+      const fp = activeSessionFP();
+      if (!fp) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const snap = state.mirrorSnapshots.get(fp);
+      const isSeq = snap?.pattern === 'position-sequence';
+      let verb = null;
+      if (e.code === 'Space') {
+        verb = snap?.playing ? 'pause' : 'play';
+      } else if (e.code === 'ArrowLeft') {
+        verb = isSeq ? 'back-position' : 'back';
+      } else if (e.code === 'ArrowRight') {
+        verb = isSeq ? 'advance-position' : 'advance';
       }
-    });
-    window.zoetropeTransfer.attachDropTarget(node, sendFileForSession);
-    const callBtn = node.querySelector('.session-call');
-    callBtn.addEventListener('click', async () => {
-      const audio = window.zoetropeAudio;
-      if (!audio) return;
-      const cur = audio.getState();
-      if (cur.state !== 'idle') {
-        alert('Already in a call (' + (cur.peerLabel || cur.peerFP || 'peer') + ').');
-        return;
-      }
-      const entry = state.sessions.get(fp);
-      const label = entry?.node.querySelector('.session-label').textContent || fp.slice(0, 12);
-      try {
-        await audio.startCall(fp, label);
-        setView('session'); // Audio card lives in Session — flip the user there so they see status
-      } catch (err) {
-        console.warn('call failed:', err);
-        alert('Call failed: ' + err.message);
+      if (verb) {
+        e.preventDefault();
+        sendSessionVerb(fp, { type: verb });
       }
     });
   }
 
   // ---- Generate / Stop ------------------------------------------------
 
-  async function generateConnectionString(triggerEl, errEl) {
-    const originalText = triggerEl.textContent;
-    triggerEl.disabled = true;
-    triggerEl.textContent = 'Detecting public IP…';
-    if (errEl) errEl.textContent = '';
-    try {
-      const { url, session } = await networkQuickstart();
-      addSessionToList(session, url);
-      flashGeneratedBanner();
-    } catch (err) {
-      const msg = err.message || String(err);
-      if (errEl) errEl.textContent = msg;
-      else alert('Generate connection URL failed: ' + msg);
-    } finally {
-      triggerEl.disabled = false;
-      triggerEl.textContent = originalText;
-    }
-  }
-
-  document.getElementById('btn-new-session').addEventListener('click', e => {
-    generateConnectionString(e.currentTarget, null);
-  });
-  // Topbar mint: always visible while hosting. Context-aware — on
+  // HUD mint button: always visible while hosting. Context-aware — on
   // view-loopback it copies the /?loopback URL (the iframe's URL — the
   // only "link" that makes sense in that context); on real-hosting
   // views it mints a fresh connection URL and copies that.
-  document.getElementById('topbar-mint-url').addEventListener('click', async e => {
+  document.getElementById('hud-mint-url').addEventListener('click', async e => {
     const btn = e.currentTarget;
     const originalText = btn.textContent;
     if (state.view === 'loopback') {
@@ -647,7 +630,7 @@
     btn.textContent = '…';
     try {
       const { url, session } = await networkQuickstart();
-      addSessionToList(session, url);
+      addSession(session, url);
       try { await navigator.clipboard.writeText(url); } catch (_) {}
       const b = document.getElementById('generated-banner');
       b.textContent = 'Connection URL minted — copied to your clipboard.';
@@ -718,20 +701,43 @@
     }
   }
 
+  // Mode pills: navigate away from /manage when the user picks
+  // Standalone or Client. We tear hosting down first when any sessions
+  // are connected so the practitioner doesn't drop a live client
+  // without confirming. Hosting is the active mode here — clicking it
+  // is a no-op (highlight stays put).
+  document.querySelectorAll('#mi-hud .mpill').forEach(p => {
+    p.addEventListener('click', () => onModePillClick(p));
+  });
+  function onModePillClick(p) {
+    const target = PILL_TO_MODE[p.dataset.mode];
+    if (target === state.nmode) return; // already in this mode
+    const hasRealSessions = Array.from(state.sessions.keys())
+      .filter(fp => fp !== 'loopback').length > 0;
+    const leave = (after) => {
+      state.initialModeApplied = true;
+      networkStandalone().then(() => { window.location.href = after; });
+    };
+    if (target === 'standalone') {
+      if (hasRealSessions) {
+        confirmAction('Stop hosting? Any connected clients will be disconnected.', () => leave('/'));
+      } else {
+        leave('/');
+      }
+      return;
+    }
+    if (target === 'client') {
+      if (hasRealSessions) {
+        confirmAction('Stop hosting and join a session as a client?', () => leave('/#join'));
+      } else {
+        leave('/#join');
+      }
+    }
+  }
+
   document.getElementById('btn-show-loopback').addEventListener('click', () => switchHostingTab('loopback'));
   document.getElementById('btn-show-admin').addEventListener('click', () => switchHostingTab('admin'));
   document.getElementById('btn-show-session').addEventListener('click', () => switchHostingTab('session'));
-  document.getElementById('btn-show-info').addEventListener('click', e => {
-    const on = !document.body.classList.contains('show-info');
-    document.body.classList.toggle('show-info', on);
-    e.currentTarget.setAttribute('aria-pressed', on ? 'true' : 'false');
-  });
-  document.getElementById('btn-stop-hosting').addEventListener('click', () => {
-    confirmAction(
-      'Stop hosting? Any connected clients will be disconnected.',
-      () => { networkStandalone(); },
-    );
-  });
 
   // ---- Confirm overlay -----------------------------------------------
 
@@ -783,7 +789,7 @@
     es.addEventListener('session-created', e => {
       try {
         const snap = JSON.parse(e.data);
-        addSessionToList(snap);
+        addSession(snap);
         // Default the prep card to the freshly-minted client so the
         // practitioner can start drafting intake immediately.
         if (snap && snap.client_id) {
@@ -799,15 +805,11 @@
       try {
         const fp = JSON.parse(e.data).fingerprint;
         updateSessionStatus(fp, 'connected');
-        // Start (or restart on rejoin) the per-card uptime counter so the
-        // practitioner sees "connected for 8m 42s." Rejoin treats this as
-        // a fresh counter — see the timer block below for the rationale.
-        const entry = state.sessions.get(fp);
-        if (entry) entry.connectedAt = performance.now();
         // BeginSession just migrated intake.md → SessionRecord.PreNotes.
         // If the prep card was showing that client's intake, the buffer
         // is now empty on disk — re-fetch so the textarea reflects that.
-        if (entry && entry.snap && entry.snap.client_id && entry.snap.client_id === nextPrepClientID) {
+        const entry = state.sessions.get(fp);
+        if (entry && entry.snap.client_id && entry.snap.client_id === nextPrepClientID) {
           loadIntakeFor(nextPrepClientID);
         }
       } catch (err) {}
@@ -816,22 +818,15 @@
       try {
         const ev = JSON.parse(e.data);
         const fp = ev.fingerprint;
-        // Server tells us whether the peer closed cleanly ("left") or the
-        // WS dropped ("dropped"). Fall back to "waiting" for older events
-        // (or empty reason) so the pill never lands in an unknown state.
         const status = ev.reason === 'left' || ev.reason === 'dropped' ? ev.reason : 'waiting';
         updateSessionStatus(fp, status);
         dropMirrorSnapshot(fp);
-        // Freeze the uptime display where it is; the timer's render loop
-        // stops counting once connectedAt is null.
-        const entry = state.sessions.get(fp);
-        if (entry) entry.connectedAt = null;
       } catch (err) {}
     });
     es.addEventListener('session-removed', e => {
       try {
         const fp = JSON.parse(e.data).fingerprint;
-        removeSessionFromList(fp);
+        removeSession(fp);
         dropMirrorSnapshot(fp);
       } catch (err) {}
     });
@@ -852,16 +847,15 @@
       try {
         const ev = JSON.parse(e.data);
         if (ev.direction !== 'from-session') return; // /manage only surfaces session→manager arrivals
-        const entry = state.sessions.get(ev.source_fp);
-        if (entry) {
-          const host = entry.node.querySelector('.session-inbox');
-          window.zoetropeTransfer.renderInboundNotification(host, ev);
-        }
         // Refresh the Files card inbox when this is the client we're
         // currently viewing — keeps the list live without a manual refetch.
         if (ev.client_id && ev.client_id === filesInboxClientID) {
           refreshFilesInbox(ev.client_id);
         }
+        // Auto-expand the Files card so an inbound transfer is visible
+        // even when the practitioner has the card collapsed.
+        const det = document.getElementById('files-details');
+        if (det) det.open = true;
       } catch (err) { console.error(err); }
     });
     // Sender-side lifecycle: route through zoetropeTransfer so the
@@ -878,13 +872,11 @@
         try {
           const ev = JSON.parse(e.data);
           const payload = ev.payload || {};
-          const label = state.sessions.get(ev.fingerprint)?.snap?.label
-            || state.sessions.get(ev.fingerprint)?.node.querySelector('.session-label').textContent
-            || (ev.fingerprint || '').slice(0, 12);
-          // On incoming offer to an idle practitioner, flip to MI so the
-          // call surface is visible. Other verbs land in whatever view
-          // the practitioner is already in. Audio surfaces live in
-          // Session, so an incoming offer flips them there.
+          const entry = state.sessions.get(ev.fingerprint);
+          const label = entry ? resolveSessionLabel(entry.snap) : (ev.fingerprint || '').slice(0, 12);
+          // On incoming offer to an idle practitioner, flip to Session
+          // so the audio card is visible. Other verbs land in whatever
+          // view the practitioner is already in.
           if (verb === 'audio-offer' && window.zoetropeAudio.getState().state === 'idle') {
             setView('session');
           }
@@ -949,12 +941,18 @@
     const showIdle = (snap.state === 'idle' || snap.state === 'outgoing-ringing');
     const showIncoming = (snap.state === 'incoming-ringing');
     const showActive = (snap.state === 'connecting' || snap.state === 'connected');
-    document.getElementById('audio-idle-hint').hidden = !showIdle;
+    document.getElementById('audio-idle').hidden = !showIdle;
     document.getElementById('audio-idle-hint').textContent = (snap.state === 'outgoing-ringing')
       ? 'Calling ' + (snap.peerLabel || 'peer') + '…'
-      : 'No active call. Use 📞 on a session card to start one.';
+      : 'No active call.';
     document.getElementById('audio-incoming').hidden = !showIncoming;
     document.getElementById('audio-active').hidden = !showActive;
+    // Auto-expand the collapsed audio card on any non-idle state
+    // (incoming / outgoing ring, connecting, connected) so the
+    // practitioner doesn't miss a ringing call. Leaves the user's
+    // choice alone otherwise — we only set open=true on transition.
+    const details = document.getElementById('audio-details');
+    if (details && snap.state !== 'idle') details.open = true;
     if (showIncoming) {
       document.getElementById('audio-incoming-label').textContent = snap.peerLabel || 'unknown peer';
     }
@@ -1179,13 +1177,8 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       state.clients = await r.json();
       renderClientsList();
-      renderFilesPicker();
       updateFilesSendState();
       renderNextPrepPicker();
-      // Re-resolve session labels — newly-fetched client names may
-      // promote fp-prefixes to "Alice" on cards rendered before the
-      // fetch returned.
-      applyResolvedLabels();
     } catch (err) {
       console.warn('clients list:', err);
     }
@@ -1544,51 +1537,27 @@
 
   let filesInboxClientID = null;
 
-  function renderFilesPicker() {
-    const sel = document.getElementById('files-client-picker');
-    if (!sel) return;
-    const prev = sel.value;
-    sel.innerHTML = '';
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = state.clients.length ? 'Pick a client…' : 'No clients yet';
-    sel.appendChild(blank);
-    for (const c of state.clients) {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = c.name;
-      sel.appendChild(opt);
-    }
-    if (prev && state.clients.some(c => c.id === prev)) sel.value = prev;
-  }
-
-  function findLiveSessionForClient(clientID) {
-    for (const entry of state.sessions.values()) {
-      const s = entry.snap;
-      if (s && s.client_id === clientID && s.connected) return s.fingerprint;
-    }
-    return '';
+  // activeClientID resolves the active session's bound client_id, if any.
+  // The files + audio cards target this implicitly — no picker.
+  function activeClientID() {
+    const fp = activeSessionFP();
+    if (!fp) return null;
+    return state.sessions.get(fp)?.snap?.client_id || null;
   }
 
   function updateFilesSendState() {
-    const sel = document.getElementById('files-client-picker');
     const input = document.getElementById('files-send-input');
     const btn = document.getElementById('files-send-btn');
-    if (!sel || !input || !btn) return;
-    const clientID = sel.value;
-    if (!clientID) {
+    if (!input || !btn) return;
+    const fp = activeSessionFP();
+    if (!fp) {
       btn.disabled = true;
-      btn.title = 'Pick a client first';
-      return;
-    }
-    if (!findLiveSessionForClient(clientID)) {
-      btn.disabled = true;
-      btn.title = 'No live session bound to this client';
+      btn.title = 'No connected client';
       return;
     }
     const hasFile = input.files && input.files.length > 0;
     btn.disabled = !hasFile;
-    btn.title = hasFile ? 'Send to active session' : 'Choose a file first';
+    btn.title = hasFile ? 'Send to the connected client' : 'Choose a file first';
   }
 
   async function refreshFilesInbox(clientID) {
@@ -1599,7 +1568,7 @@
     list.innerHTML = '';
     if (!clientID) {
       empty.hidden = false;
-      empty.textContent = 'Pick a client to see received files.';
+      empty.textContent = 'No connected client. The inbox shows what the active client has sent you.';
       updateFilesSendState();
       return;
     }
@@ -1648,23 +1617,15 @@
   }
 
   function wireFilesCard() {
-    const sel = document.getElementById('files-client-picker');
     const input = document.getElementById('files-send-input');
     const btn = document.getElementById('files-send-btn');
     const status = document.getElementById('files-send-status');
     const card = document.getElementById('files-card');
-    if (!sel || !input || !btn || !status || !card) return;
-    sel.addEventListener('change', () => refreshFilesInbox(sel.value));
+    if (!input || !btn || !status || !card) return;
     input.addEventListener('change', updateFilesSendState);
     async function sendFromFilesCard(file) {
-      const clientID = sel.value;
-      if (!clientID || !file) return;
-      const fp = findLiveSessionForClient(clientID);
-      if (!fp) {
-        status.textContent = 'No live session bound to this client.';
-        status.classList.add('error');
-        return;
-      }
+      const fp = activeSessionFP();
+      if (!fp || !file) return;
       status.classList.remove('error');
       status.textContent = '';
       btn.disabled = true;
@@ -1869,14 +1830,13 @@
   }
 
   function pickMirrorTarget() {
-    // First session that's both connected and has a snapshot.
-    for (const [fp, snap] of state.mirrorSnapshots) {
-      const entry = state.sessions.get(fp);
-      if (!entry) continue;
-      if (entry.node.querySelector('.session-status')?.dataset.status !== 'connected') continue;
-      return { fp, snap };
-    }
-    return null;
+    // Active session — first connected real session, or loopback when
+    // dev mode is the only thing engaged. Returns null if there's no
+    // session to mirror.
+    const fp = activeSessionFP();
+    if (!fp) return null;
+    const snap = state.mirrorSnapshots.get(fp);
+    return snap ? { fp, snap } : null;
   }
 
   function mirrorTick() {
@@ -1895,13 +1855,11 @@
     const c2d = canvas.getContext('2d');
 
     const status = document.getElementById('mirror-status');
-    const hint = document.getElementById('mirror-hint');
     const target = pickMirrorTarget();
 
     if (!target) {
       c2d.fillStyle = '#000';
       c2d.fillRect(0, 0, w, h);
-      hint.hidden = false;
       status.textContent = 'idle';
       status.dataset.state = 'idle';
       return;
@@ -1915,14 +1873,11 @@
     if (!item || !fn) {
       c2d.fillStyle = state.config?.background || '#000';
       c2d.fillRect(0, 0, w, h);
-      hint.hidden = false;
-      hint.textContent = 'Connected, but playlist item out of range. Was the playlist edited?';
       status.textContent = 'live';
       status.dataset.state = 'connected';
       return;
     }
 
-    hint.hidden = true;
     status.textContent = target.snap.playing ? 'live' : 'paused';
     status.dataset.state = target.snap.playing ? 'connected' : 'idle';
 
@@ -1990,80 +1945,15 @@
     requestAnimationFrame(mirrorTick);
   }
 
-  // ---- Focused session + keyboard shortcuts -------------------------
-  //
-  // Clicking inside a session card sets it as the keyboard-shortcut
-  // target. Space toggles play/pause; ← / → step pattern or position
-  // depending on the snapshot's pattern type. Bails when the user is
-  // typing in an input/select/textarea so typing the session URL or a
-  // text field doesn't move the ball.
-  state.focusedSessionFP = null;
-  function setFocusedSession(fp) {
-    state.focusedSessionFP = fp;
-    for (const [otherFp, entry] of state.sessions) {
-      entry.node.classList.toggle('focused', otherFp === fp);
-    }
-  }
-  function wireFocusOnSessionNode(node, fp) {
-    node.addEventListener('mousedown', () => setFocusedSession(fp));
-  }
-  document.addEventListener('keydown', e => {
-    if (!state.focusedSessionFP) return;
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    const fp = state.focusedSessionFP;
-    const entry = state.sessions.get(fp);
-    if (!entry || !entry.snap.connected) return;
-    const snap = state.mirrorSnapshots.get(fp);
-    const isSeq = snap?.pattern === 'position-sequence';
-    let verb = null;
-    if (e.code === 'Space') {
-      verb = snap?.playing ? 'pause' : 'play';
-    } else if (e.code === 'ArrowLeft') {
-      verb = isSeq ? 'back-position' : 'back';
-    } else if (e.code === 'ArrowRight') {
-      verb = isSeq ? 'advance-position' : 'advance';
-    }
-    if (verb) {
-      e.preventDefault();
-      sendSessionVerb(fp, { type: verb });
-    }
-  });
-
-  // ---- Session uptime timer -----------------------------------------
-  //
-  // One global setInterval at 1 Hz walks every session card and renders
-  // elapsed time since the latest connect. Disconnects null out
-  // connectedAt so the display freezes at the last value rather than
-  // continuing to count.
-  function formatUptime(ms) {
-    const s = Math.max(0, Math.floor(ms / 1000));
-    if (s < 60) return s + 's';
-    const m = Math.floor(s / 60), rs = s % 60;
-    if (m < 60) return rs ? `${m}m ${rs}s` : `${m}m`;
-    const h = Math.floor(m / 60), rm = m % 60;
-    return rm ? `${h}h ${rm}m` : `${h}h`;
-  }
-  setInterval(() => {
-    const now = performance.now();
-    for (const [, entry] of state.sessions) {
-      const upEl = entry.node.querySelector('.session-uptime');
-      if (!upEl) continue;
-      if (entry.connectedAt) {
-        upEl.textContent = formatUptime(now - entry.connectedAt);
-        upEl.hidden = false;
-      }
-      // If disconnected, leave the last-rendered value in place (frozen).
-      // Hide entirely only if we've never connected.
-      else if (!upEl.textContent) {
-        upEl.hidden = true;
-      }
-    }
-  }, 1000);
-
   // ---- Init -----------------------------------------------------------
 
   async function init() {
+    // Subscribe to SSE BEFORE the auto-engage POST below. The event bus
+    // has no replay buffer (see bridge.go), so any mode-change published
+    // by the host transition is lost if we subscribe after the POST
+    // returns — leaving the page stuck on its initial standalone view
+    // and the HUD mint button hidden.
+    startEventSource();
     try {
       const r = await fetch('/api/mode/state', { cache: 'no-store' });
       if (r.ok) applyMode(await r.json());
@@ -2092,15 +1982,14 @@
       }
     }
     // Load the practitioner's saved config so the editor has something to
-    // show the moment Hosting mode lights up. Run in parallel with the
-    // SSE bus startup; either order is safe.
+    // show the moment Hosting mode lights up.
     window.zoetropeEditor.loadConfig().catch(err => {
       console.warn('editor loadConfig failed:', err);
     });
     setupMICardDrag();
     wireFilesCard();
     setupMirror();
-    startEventSource();
+    wireSessionControls();
     heartbeat();
   }
   init();

@@ -195,7 +195,6 @@
     });
     // Re-apply read-only state. Item nodes were just rebuilt, so any
     // disabled flags from a prior render are gone.
-    updateActivePlaylistTitle();
     applyReadOnly();
   }
 
@@ -593,7 +592,6 @@
     setVal('linger-lead-input', state.config.lingerLeadFrac ?? 0);
     setChecked('show-position-labels', !!state.config.showPositionLabels);
     setVal('max-transfer-mib', Math.round((state.config.maxTransferBytes ?? 0) / (1024 * 1024)));
-    updateActivePlaylistTitle();
     applyReadOnly();
     if (state.config.field) {
       setVal('field-speed-input', state.config.field.speed ?? 3);
@@ -617,16 +615,6 @@
   function setChecked(id, v) {
     const el = document.getElementById(id);
     if (el) el.checked = v;
-  }
-
-  // updateActivePlaylistTitle keeps the #active-playlist-title h3 (on
-  // /manage's editor card) in sync with whichever playlist is active.
-  // The header on /'s drawer doesn't have this element — null-guarded.
-  function updateActivePlaylistTitle() {
-    const el = document.getElementById('active-playlist-title');
-    if (!el) return;
-    const cur = currentPlaylist();
-    el.textContent = cur ? 'Active playlist · ' + cur.name : 'Active playlist';
   }
 
   // applyReadOnly disables item-level editing affordances when the active

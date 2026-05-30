@@ -366,21 +366,9 @@ body.mode-field .balls-only { display: none !important; }
   display: none;
 }
 
-/* /manage Library card: a dedicated card containing only the playlist
-   picker + CRUD. Wider picker than the /-page sidebar version, buttons
-   in a tidy row beneath, edit form expands inline. */
-#library-card .library-row {
-  margin: 8px 0 12px;
-}
-#library-card #playlist-picker {
-  width: 100%;
-  background: var(--base);
-  color: var(--text);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 13px;
-}
+/* /manage Library card: a dedicated card containing the playlist CRUD
+   (new / rename / duplicate / delete). The active-playlist picker
+   lives in the editor-section header, not here. */
 #library-card .library-buttons {
   display: flex;
   gap: 8px;
@@ -964,26 +952,6 @@ body.mode-field .balls-only { display: none !important; }
 
 /* ---- File transfer ------------------------------------------------- */
 
-.session-attach {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.session-attach:hover { background: var(--overlay); }
-.session-attach:disabled { opacity: 0.5; cursor: wait; }
-
-.session-inbox {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 6px 0;
-}
-.session-inbox:empty { display: none; }
-
 .xfer-notification {
   background: color-mix(in oklab, var(--accent-2) 14%, var(--surface));
   border: 1px solid var(--accent-2);
@@ -1027,9 +995,9 @@ body.mode-field .balls-only { display: none !important; }
   background-color: color-mix(in oklab, var(--accent) 6%, transparent);
 }
 
-/* Outbound progress card. Rendered in whichever host initiated the send
-   (.session-inbox on a session card, #files-card on MI, #client-inbox
-   on the client overlay). Auto-removed 3s after completed. */
+/* Outbound progress card. Rendered in whichever host initiated the
+   send (#files-card on MI, #client-inbox on the client overlay).
+   Auto-removed 3s after completed. */
 .xfer-progress {
   background: var(--surface);
   border: 1px solid var(--overlay);
@@ -1068,24 +1036,7 @@ body.mode-field .balls-only { display: none !important; }
 
 /* ---- Voice call --------------------------------------------------- */
 
-.session-call {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.session-call:hover { background: var(--overlay); }
-
 #audio-card[hidden] { display: none; }
-#audio-card .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
 .audio-state-pill {
   font-size: 11px;
   padding: 2px 8px;
@@ -1104,7 +1055,9 @@ body.mode-field .balls-only { display: none !important; }
   resize: both;
   overflow: hidden;
   min-width: 240px;
-  min-height: 200px;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
 }
 #mirror-card .mirror-stage {
   margin-top: 8px;
@@ -1112,9 +1065,9 @@ body.mode-field .balls-only { display: none !important; }
   border: 1px solid var(--overlay);
   border-radius: 6px;
   overflow: hidden;
-  /* Stage stretches to fill the card body so resizing the card grows
-     the canvas underneath. */
-  height: calc(100% - 80px);
+  /* Stage fills remaining vertical space; play controls + detail line
+     below sit at natural height under it. */
+  flex: 1;
   min-height: 140px;
 }
 #mirror-card .mirror-stage canvas {
@@ -1285,18 +1238,10 @@ button.danger:hover { filter: brightness(1.08); }
 }
 .audio-vol input[type="range"] { width: 100px; }
 
-/* Files card: client picker in the header, send-row underneath, then a
-   list of inbox entries. Mirrors audio-card / clients-card density. */
+/* Files card: collapses to its summary; opens to show the send row +
+   inbox list. Both sending and inbox are hard-wired to the connected
+   client (no picker). */
 #files-card[hidden] { display: none; }
-#files-card .section-header select {
-  background: var(--base);
-  color: var(--text);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 12px;
-  min-width: 140px;
-}
 .files-send {
   display: flex;
   align-items: center;
@@ -1438,12 +1383,14 @@ button.danger:hover { filter: brightness(1.08); }
 
 #client-status { display: none; }
 body.nmode-client #editor { display: none; }
-body.nmode-client #hud { pointer-events: none; opacity: 0.0; }
+/* In client mode only the transport row is suppressed — the mode pills
+   stay visible so the session-type switcher is in the same spot in
+   every view (matches the /manage MI HUD). #hud itself stays at full
+   opacity in client and manager modes; the auto-idle fade only applies
+   in standalone where the canvas is the foreground. */
+body.nmode-client #transport { opacity: 0; pointer-events: none; }
+body.nmode-client #hud.idle { opacity: 1; }
 body.nmode-client #client-status { display: flex; }
-/* While hosting on the ball page the user can still self-test locally;
-   the hosting state is shown via the pill, never by taking over the UI.
-   Pills stay visible (no idle fade) so the hosting state is always
-   readable. */
 body.nmode-manager #hud.idle { opacity: 1; }
 /* Balls/Field tabs are only meaningful in standalone. */
 body:not(.nmode-standalone) #transport .tabs { display: none !important; }
@@ -1562,54 +1509,6 @@ body.page-manage {
   color: var(--subtext);
   margin-left: 4px;
 }
-#manage-topbar #topbar-mint-url {
-  margin-left: auto;
-  background: var(--accent);
-  color: var(--base);
-  border: 0;
-  border-radius: 6px;
-  padding: 8px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-#manage-topbar #topbar-mint-url:hover {
-  filter: brightness(1.08);
-}
-#manage-topbar #topbar-mint-url[hidden] {
-  display: none;
-}
-#manage-topbar #btn-stop-hosting {
-  background: var(--danger);
-  color: var(--base);
-  border: 0;
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
-  cursor: pointer;
-}
-#manage-topbar #topbar-mint-url[hidden] + #btn-stop-hosting {
-  margin-left: auto;
-}
-#manage-topbar #btn-stop-hosting:hover {
-  filter: brightness(1.1);
-}
-#manage-topbar #btn-stop-hosting[hidden] {
-  display: none;
-}
-/* Back-link gets pushed to margin-left:auto only when both Stop-hosting
-   and the topbar-mint button are hidden; otherwise it sits next to them. */
-#manage-topbar .back-link {
-  font-size: 13px;
-  color: var(--subtext);
-  text-decoration: none;
-}
-#manage-topbar #topbar-mint-url[hidden] + #btn-stop-hosting[hidden] + .back-link {
-  margin-left: auto;
-}
-#manage-topbar .back-link:hover {
-  color: var(--text);
-}
 #manage-body {
   padding: 24px;
   display: flex;
@@ -1705,14 +1604,16 @@ body.loopback-split #confirm-overlay:not([hidden]) { right: 50vw; }
     grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr);
   }
 }
-body.view-admin.show-info #identity-panel {
+body.view-admin #identity-panel {
   grid-column: 1 / -1;
 }
 
-/* MI HUD: sticky strip at the bottom of the hosting view. Three tabs
-   (Loopback / Admin / Session) select the active hosting view; Info
-   toggles the identity card. Hidden in view-client via the rule near
-   the top of the file. */
+/* MI HUD: sticky strip at the bottom of the hosting view. Left-to-right:
+   mode pills (Standalone / Client / Hosting — same component as on the
+   ball page); view tabs (Loopback / Admin / Session) which select the
+   active hosting view; spacer; Mint URL (context-aware, hidden until
+   hosting engages). Hidden in view-client via the rule near the top
+   of the file. */
 #mi-hud {
   position: fixed;
   bottom: 0;
@@ -1720,6 +1621,7 @@ body.view-admin.show-info #identity-panel {
   right: 0;
   z-index: 50;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 24px;
@@ -1728,6 +1630,20 @@ body.view-admin.show-info #identity-panel {
 }
 #mi-hud .hud-spacer {
   flex: 1;
+}
+#mi-hud .hud-mint {
+  background: var(--accent);
+  color: var(--base);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+#mi-hud .hud-mint:hover {
+  filter: brightness(1.08);
+  background: var(--accent);
+  color: var(--base);
+}
+#mi-hud .hud-mint[hidden] {
+  display: none;
 }
 .hud-btn {
   background: transparent;
@@ -1766,12 +1682,10 @@ body.view-session #btn-show-session {
   padding: 16px;
 }
 
-/* Identity card: admin-only (data-views="admin") and hidden by default
-   even there; the HUD Info button toggles body.show-info to reveal it.
-   Landing/client/session hiding is already handled by the data-views
-   rule on .card. */
-#identity-panel { display: none; }
-body.view-admin.show-info #identity-panel { display: block; }
+/* Identity card: admin-only (data-views="admin"). Always visible at
+   the bottom of Admin view; the data-views rule on .card handles
+   hiding it in non-admin views. */
+body.view-admin #identity-panel { display: block; }
 .copy-btn {
   background: var(--surface);
   color: var(--text);
@@ -1826,8 +1740,7 @@ body.view-admin.show-info #identity-panel { display: block; }
 }
 
 #identity-panel,
-#editor-section,
-#sessions {
+#editor-section {
   background: var(--surface);
   border: 1px solid var(--overlay);
   border-radius: 8px;
@@ -1842,13 +1755,19 @@ body.view-admin.show-info #identity-panel { display: block; }
   justify-content: space-between;
   margin-bottom: 8px;
 }
-#editor-section .section-header h3 {
-  margin: 0;
-  font-size: 14px;
-  color: var(--subtext);
+#editor-section .section-header select#playlist-picker {
+  flex: 1;
+  min-width: 0;
+  background: var(--base);
+  color: var(--text);
+  border: 1px solid var(--overlay);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 13px;
   font-weight: 500;
 }
 #editor-section .section-header select#add-pattern {
+  margin-left: 8px;
   background: var(--accent);
   color: var(--base);
   border: 0;
@@ -1936,8 +1855,7 @@ body.view-admin.show-info #identity-panel { display: block; }
   font-size: 12px;
   color: var(--subtext);
 }
-#identity-panel h3,
-#sessions > header h3 {
+#identity-panel h3 {
   margin: 0 0 12px 0;
   font-size: 14px;
   color: var(--subtext);
@@ -1988,127 +1906,81 @@ body.view-admin.show-info #identity-panel { display: block; }
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   word-break: break-all;
 }
-#sessions > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+/* ---- Session view layout ------------------------------------------
+   When the Session HUD tab is active, #mi-body becomes a 2x2 grid:
+     banner spans both columns
+     audio | files       (top row, both collapsed by default)
+     editor | mirror     (bottom row, editor left of mirror)
+   The audio + files cards collapse to just their summary via the
+   wrapping <details>; play controls + Start-call disable until a
+   real client connects (renderSessionView in manage.js). */
+
+body.view-session #mi-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-areas:
+    "banner banner"
+    "audio  files"
+    "editor mirror";
+  gap: 16px;
 }
-#btn-new-session {
-  background: var(--accent);
-  color: var(--base);
-  border: 0;
+body.view-session #session-banner { grid-area: banner; }
+body.view-session #audio-card { grid-area: audio; align-self: start; }
+body.view-session #files-card { grid-area: files; align-self: start; }
+body.view-session #editor-section { grid-area: editor; }
+body.view-session #mirror-card { grid-area: mirror; }
+
+/* Session banner: transient errors + persistent firewall hint at the
+   top of Session view. Hidden when empty. */
+.session-banner {
+  padding: 8px 12px;
   border-radius: 6px;
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.45;
+  background: color-mix(in oklab, var(--accent-2) 14%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent-2) 50%, var(--overlay));
+  color: var(--text);
 }
-#sessions-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.session-banner[data-kind="error"] {
+  background: color-mix(in oklab, var(--danger) 18%, var(--surface));
+  border-color: var(--danger);
 }
-.session {
-  background: var(--base);
-  border: 1px solid var(--overlay);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 8px;
+.session-banner[hidden] { display: none; }
+
+/* Collapsible Audio + Files cards. <details> swap chevron arrow via
+   ::marker; we keep the default arrow. <summary> is the always-visible
+   header. */
+#audio-card details,
+#files-card details {
+  display: block;
 }
-.session-header {
+.card-summary {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
   margin-bottom: 8px;
 }
-.session-label {
+.card-summary::-webkit-details-marker { display: none; }
+.card-summary h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--subtext);
+  font-weight: 500;
   flex: 1;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
 }
-.session-status {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 12px;
-  background: var(--overlay);
-  color: var(--subtext);
-}
-.session-status[data-status="connected"] {
-  background: color-mix(in oklab, var(--success) 30%, transparent);
-  color: var(--success);
-}
-/* "left": client clicked Leave — graceful, neutral subdued color.
-   "dropped": network drop or watchdog — warning color so the practitioner
-   sees it's distinct from a deliberate exit. */
-.session-status[data-status="left"] {
-  background: color-mix(in oklab, var(--subtext) 22%, transparent);
-  color: var(--subtext);
-}
-.session-status[data-status="dropped"] {
-  background: color-mix(in oklab, var(--danger) 28%, transparent);
-  color: var(--danger);
-}
-.session-uptime {
-  font-size: 11px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  color: var(--subtext);
-  padding: 2px 6px;
-}
-.session-uptime[hidden] { display: none; }
-/* Keyboard-shortcut focus: clicking a session card sets it as focused
-   so Space / ← / → target it. Outline + faint accent fill so the user
-   knows which card the keys will affect without disturbing layout. */
-.session.focused {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.session-remove {
-  background: transparent;
-  color: var(--danger);
-  border: 0;
-  cursor: pointer;
-  font-size: 18px;
-  padding: 4px 8px;
-  min-width: 32px;
-  min-height: 32px;
-  line-height: 1;
-  border-radius: 4px;
-}
-.session-remove:hover { color: var(--text); }
-.session-url-row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-.session-url {
-  flex: 1;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 11px;
-  resize: none;
-  height: 56px;
-}
-.session-copy {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--overlay);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  align-self: flex-start;
-}
-.session-copy:hover { background: var(--overlay); }
+details[open] > .card-summary { margin-bottom: 12px; }
+
+/* Mirror-card play controls. Reused for the singleton row under the
+   mirror canvas; the same .ctl-* / .session-picker selectors that
+   used to style per-session controls now style the single set here. */
 .session-controls {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-top: 8px;
 }
 .session-controls button,
 .session-picker {
@@ -2146,29 +2018,8 @@ body.view-admin.show-info #identity-panel { display: block; }
   text-align: right;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
-.session-error {
-  margin: 4px 0;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  background: color-mix(in oklab, var(--danger) 18%, var(--surface));
-  border: 1px solid var(--danger);
-  border-radius: 4px;
-  color: var(--text);
-}
-.session-error[hidden] { display: none; }
-.session-firewall-hint {
-  margin: 6px 0;
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.45;
-  background: color-mix(in oklab, var(--accent-2) 14%, var(--surface));
-  border: 1px solid color-mix(in oklab, var(--accent-2) 50%, var(--overlay));
-  border-radius: 6px;
-  color: var(--text);
-}
-.session-firewall-hint[hidden] { display: none; }
 .session-detail {
+  margin-top: 6px;
   font-size: 11px;
   color: var(--subtext);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;

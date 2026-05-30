@@ -12,11 +12,8 @@
     <div class="brand">
       <img src="icon.png" class="brand-mark" alt="">
       <div class="brand-name">Zoetrope</div>
-      <span class="page-label">Hosting session</span>
+      <span id="page-label" class="page-label"></span>
     </div>
-    <button id="topbar-mint-url" class="topbar-mint primary-cta" hidden title="Mint a connection URL — copies to clipboard so you can paste it to your client. While on the Loopback tab, copies the /?loopback URL instead.">+ Generate URL</button>
-    <button id="btn-stop-hosting" hidden title="Tear down the listener and return to standalone">Stop hosting</button>
-    <a class="back-link" href="/">← Ball view</a>
   </header>
 
   <main id="manage-body">
@@ -30,11 +27,13 @@
          card is rendered until hosting is engaged. -->
     <div id="start-error" class="start-error"></div>
 
-    <!-- MI card grid: shown whenever hosting is engaged. The tab strip in
-         the bottom HUD (Loopback / Admin / Session) selects which cards
-         are visible via body.view-loopback / view-admin / view-session
-         and the per-card data-views attribute. Identity sits behind the
-         Info button. -->
+    <!-- MI card grid: shown whenever hosting is engaged. The HUD tab strip
+         picks the view (loopback / admin / session); per-card data-views
+         filters which cards are visible. Admin = between-session bench
+         (clients, prep, library, editor, identity); Session = the
+         hosting workbench (audio + files collapsed at top, editor with
+         playlist picker on the left, mirror with play controls on the
+         right) — controls disable until a real client is connected. -->
     <div id="mi-body" class="card-grid" role="tabpanel">
       <!-- Next session prep: writes to <clientDir>/intake.md for the
            selected client. BeginSession migrates this into the new
@@ -65,24 +64,11 @@
           <button id="btn-new-client-cancel" type="button" class="regen">Cancel</button>
         </div>
       </section>
-      <section id="sessions" class="card" data-views="admin" hidden>
-        <header class="section-header">
-          <h3>Sessions</h3>
-          <button id="btn-new-session" type="button" class="regen" title="Mint another connection URL for a new client">+ Generate connection URL</button>
-        </header>
-        <p class="section-hint">
-          Minted URLs and the per-session transport / send-file controls. Each URL pins your practitioner identity, embeds a one-time client cert, and stays valid for 10 minutes.
-        </p>
-        <ol id="sessions-list"></ol>
-      </section>
       <section id="library-card" class="card" data-views="admin" hidden>
         <header class="section-header">
           <h3>Library</h3>
         </header>
-        <p class="section-hint">Pick the playlist that plays. Create, rename, duplicate, or delete from here.</p>
-        <div class="library-row">
-          <select id="playlist-picker" title="Active playlist (the one pushed to clients on connect or active-session switch)"></select>
-        </div>
+        <p class="section-hint">Create, rename, duplicate, or delete playlists. The picker for switching active playlist lives in the editor header.</p>
         <div class="library-buttons">
           <button id="lib-new" type="button" class="regen" title="New playlist">+ New</button>
           <button id="lib-rename" type="button" class="regen" title="Rename / recategorize">Rename</button>
@@ -103,7 +89,7 @@
 
       <section id="editor-section" class="card" data-views="admin session" hidden>
         <header class="section-header">
-          <h3 id="active-playlist-title">Active playlist</h3>
+          <select id="playlist-picker" class="active-playlist-picker" title="Switch the active playlist (the one pushed to clients on connect or live)"></select>
           <select id="add-pattern" title="Add pattern">
             <option value="" disabled selected>+ Add…</option>
           </select>
@@ -148,75 +134,99 @@
         </footer>
       </section>
 
-      <!-- Mirror: a session-only card that renders what the client is
-           currently animating. Updates from `session-state` SSE events
-           with local-rAF extrapolation in between, so the canvas is
-           smooth and matches the client's ball within a frame or two.
-           Resizable via native `resize: both`; size persists in
-           localStorage. -->
+      <!-- Mirror: live render of what the connected client is animating.
+           Updates from `session-state` SSE events with local-rAF
+           extrapolation in between. Play controls sit directly under the
+           canvas and target the active (connected) session's FP via
+           sendSessionVerb. Resizable via native `resize: both`; size
+           persists in localStorage. -->
       <section id="mirror-card" class="card" data-views="session" hidden>
         <header class="section-header">
           <h3>Mirror</h3>
           <span id="mirror-status" class="audio-state-pill" data-state="idle">idle</span>
         </header>
-        <p id="mirror-hint" class="section-hint">
-          No connected session. Mirror lights up when a client joins and starts a pattern.
-        </p>
         <div class="mirror-stage"><canvas id="mirror-canvas"></canvas></div>
+        <div id="session-controls" class="session-controls">
+          <button class="ctl-play" data-verb="play" disabled>▶ Play</button>
+          <button class="ctl-pause" data-verb="pause" disabled>⏸ Pause</button>
+          <button class="ctl-back" data-verb="back" disabled title="Start of current sequence" aria-label="Back to start of current sequence">◀</button>
+          <button class="ctl-advance" data-verb="advance" disabled title="Next sequence" aria-label="Advance to next sequence">▶▶</button>
+          <button class="ctl-stop" data-verb="stop" disabled title="Pause and reset to first sequence">Reset</button>
+          <select id="session-picker" class="session-picker" title="Jump to a specific sequence" disabled>
+            <option value="">Jump to…</option>
+          </select>
+          <label class="ctl-speed-wrap" title="Live tempo multiplier (0.25× – 4×). Sends set-speed on release.">
+            <span class="ctl-speed-icon">🐢</span>
+            <input id="session-speed" class="ctl-speed" type="range" min="0.25" max="4" step="0.25" value="1" disabled>
+            <span id="session-speed-value" class="ctl-speed-value">1×</span>
+          </label>
+        </div>
+        <div id="session-detail" class="session-detail"></div>
       </section>
 
-      <!-- Audio: bidirectional voice over WebRTC. Idle shows a hint
-           pointing at the session-card 📞 button (calls are initiated
-           there). Ringing / connecting / connected show controls. -->
+      <!-- Audio: bidirectional voice over WebRTC. The card stays
+           collapsed (just header + state pill) until there's something
+           the practitioner needs to act on — an incoming call, an
+           in-progress call, or an idle moment when they're choosing to
+           start one. JS toggles `audio-details.open` based on
+           audio.getState() so the card auto-expands on activity but
+           still respects manual collapse afterward. Start call targets
+           the active (connected) session. -->
       <section id="audio-card" class="card" data-views="session" hidden>
-        <header class="section-header">
-          <h3>Audio</h3>
-          <span id="audio-state-pill" class="audio-state-pill" data-state="idle">idle</span>
-        </header>
-        <p id="audio-idle-hint" class="section-hint">
-          No active call. Use 📞 on a session card to start one.
-        </p>
-        <div id="audio-incoming" class="audio-incoming" hidden>
-          <p>Incoming call from <strong id="audio-incoming-label"></strong></p>
-          <div class="audio-incoming-actions">
-            <button id="audio-accept" type="button" class="primary-cta">Accept</button>
-            <button id="audio-decline" type="button" class="ghost">Decline</button>
+        <details id="audio-details">
+          <summary class="card-summary">
+            <h3>Audio</h3>
+            <span id="audio-state-pill" class="audio-state-pill" data-state="idle">idle</span>
+          </summary>
+          <div id="audio-idle">
+            <p id="audio-idle-hint" class="section-hint">No active call.</p>
+            <button id="audio-start-call" type="button" class="primary-cta" disabled>📞 Start call</button>
           </div>
-        </div>
-        <div id="audio-active" class="audio-active" hidden>
-          <p>Talking with <strong id="audio-active-label"></strong></p>
-          <div class="audio-controls">
-            <button id="audio-mic-mute" type="button" class="regen">🎤 Mute</button>
-            <label class="audio-vol">
-              <span>🔊</span>
-              <input type="range" id="audio-volume" min="0" max="100" step="1" value="100">
-            </label>
-            <button id="audio-hangup" type="button" class="danger">End call</button>
+          <div id="audio-incoming" class="audio-incoming" hidden>
+            <p>Incoming call from <strong id="audio-incoming-label"></strong></p>
+            <div class="audio-incoming-actions">
+              <button id="audio-accept" type="button" class="primary-cta">Accept</button>
+              <button id="audio-decline" type="button" class="ghost">Decline</button>
+            </div>
           </div>
-          <div class="capture-controls">
-            <button id="capture-start" type="button" class="regen" title="Record this session — requires client consent">🔴 Record</button>
-            <button id="capture-stop" type="button" class="regen" hidden>⏹ Stop &amp; save</button>
-            <span id="capture-status" class="capture-status"></span>
+          <div id="audio-active" class="audio-active" hidden>
+            <p>Talking with <strong id="audio-active-label"></strong></p>
+            <div class="audio-controls">
+              <button id="audio-mic-mute" type="button" class="regen">🎤 Mute</button>
+              <label class="audio-vol">
+                <span>🔊</span>
+                <input type="range" id="audio-volume" min="0" max="100" step="1" value="100">
+              </label>
+              <button id="audio-hangup" type="button" class="danger">End call</button>
+            </div>
+            <div class="capture-controls">
+              <button id="capture-start" type="button" class="regen" title="Record this session — requires client consent">🔴 Record</button>
+              <button id="capture-stop" type="button" class="regen" hidden>⏹ Stop &amp; save</button>
+              <span id="capture-status" class="capture-status"></span>
+            </div>
           </div>
-        </div>
+        </details>
       </section>
 
-      <!-- Files: per-client send + persistent inbox. Send routes through
-           an active session bound to the picked client; the inbox lives
-           on disk under <clientDir>/inbox/ and survives across sessions
-           and binary restarts. -->
+      <!-- Files: per-client send + persistent inbox. Card stays collapsed
+           until needed — an inbound transfer, an in-progress send, or
+           the practitioner choosing to send a file. JS auto-expands the
+           details on activity. Send routes through the active session
+           bound to the picked client; the inbox lives on disk under
+           <clientDir>/inbox/ and survives across sessions and restarts. -->
       <section id="files-card" class="card" data-views="session" hidden>
-        <header class="section-header">
-          <h3>Files</h3>
-          <select id="files-client-picker" title="Pick a client to send to / view received files"></select>
-        </header>
-        <div id="files-send-row" class="files-send">
-          <input type="file" id="files-send-input">
-          <button id="files-send-btn" type="button" class="regen" disabled>Send</button>
-          <span id="files-send-status" class="files-status"></span>
-        </div>
-        <p id="files-empty" class="section-hint">No files received from this client yet.</p>
-        <ol id="files-inbox-list" class="files-inbox"></ol>
+        <details id="files-details">
+          <summary class="card-summary">
+            <h3>Files</h3>
+          </summary>
+          <div id="files-send-row" class="files-send">
+            <input type="file" id="files-send-input">
+            <button id="files-send-btn" type="button" class="regen" disabled>Send</button>
+            <span id="files-send-status" class="files-status"></span>
+          </div>
+          <p id="files-empty" class="section-hint">No files received from this client yet.</p>
+          <ol id="files-inbox-list" class="files-inbox"></ol>
+        </details>
       </section>
 
       <template id="files-inbox-template">
@@ -231,6 +241,11 @@
           </div>
         </li>
       </template>
+
+      <!-- Session banner: transient non-blocking hints (firewall, verb
+           errors) shown above the Session grid. Lives outside any card
+           so it can span both columns. -->
+      <div id="session-banner" class="session-banner" hidden role="status" aria-live="polite"></div>
 
       <section id="identity-panel" class="card identity-card" data-views="admin" hidden data-collapsed="true">
         <header class="identity-header">
@@ -273,20 +288,29 @@
       <div id="client-generated-url" class="client-generated-url" hidden></div>
     </section>
 
-    <!-- MI HUD: bottom strip. Three tabs select which hosting view is
-         active. Loopback engages the synthetic dev session and opens the
-         split-pane iframe; Admin and Session are real-hosting views.
-         Switching between Loopback and Admin/Session flips the
-         underlying network mode (mutually exclusive at the server). -->
+    <!-- MI HUD: bottom strip. Mode pills (Standalone / Client / Hosting)
+         on the left match the ball-page HUD so the session-type switcher
+         is in the same spot in every view. The three view tabs
+         (Loopback / Admin / Session) select which hosting view is
+         active; Loopback engages the synthetic dev session and opens
+         the split-pane iframe; Admin and Session are real-hosting
+         views. Switching between Loopback and Admin/Session flips the
+         underlying network mode (mutually exclusive at the server).
+         Mint URL is context-aware (real-hosting → mint and copy a
+         fresh URL; Loopback → copy /?loopback). -->
     <div id="mi-hud">
-      <span class="hud-spacer"></span>
+      <nav class="mode-pills" aria-label="Mode">
+        <button class="mpill" data-mode="standalone">Standalone</button>
+        <button class="mpill" data-mode="client">Client</button>
+        <button class="mpill" data-mode="hosting">Hosting</button>
+      </nav>
       <span class="hud-tabs" role="tablist" aria-label="Hosting view">
         <button id="btn-show-loopback" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Loopback (dev) — synthetic in-process client, split-pane iframe">Loopback</button>
         <button id="btn-show-admin" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Admin — between-session work (sessions, clients, playlists, identity)">Admin</button>
         <button id="btn-show-session" type="button" class="hud-btn" role="tab" aria-selected="false" aria-controls="mi-body" title="Live session — mirror, audio, file transfer, playlist">Session</button>
       </span>
       <span class="hud-spacer"></span>
-      <button id="btn-show-info" type="button" class="hud-btn" title="Show / hide identity details" aria-pressed="false">Info</button>
+      <button id="hud-mint-url" class="hud-btn hud-mint" hidden title="Mint a connection URL — copies to clipboard so you can paste it to your client. While on the Loopback tab, copies the /?loopback URL instead.">+ Generate URL</button>
     </div>
 
     <template id="item-template">
@@ -336,42 +360,6 @@
       </li>
     </template>
   </main>
-
-  <template id="session-template">
-    <li class="session">
-      <div class="session-header">
-        <span class="session-label"></span>
-        <span class="session-status" data-status="waiting">waiting</span>
-        <span class="session-uptime" hidden></span>
-        <button class="session-remove danger" title="Close and remove this session" aria-label="Close and remove this session">×</button>
-      </div>
-      <div class="session-url-row">
-        <textarea class="session-url" readonly></textarea>
-        <button class="session-copy">Copy</button>
-      </div>
-      <div class="session-firewall-hint" hidden>
-        5 minutes since this URL was generated and no client has connected. Most often this means your local firewall (Windows Defender / macOS / ufw) is blocking inbound on port 38130. Less commonly: the router NAT isn't forwarding 38130 to this machine.
-      </div>
-      <div class="session-controls">
-        <button class="ctl-play" data-verb="play">▶ Play</button>
-        <button class="ctl-pause" data-verb="pause">⏸ Pause</button>
-        <button class="ctl-back" data-verb="back" title="Start of current sequence" aria-label="Back to start of current sequence">◀</button>
-        <button class="ctl-advance" data-verb="advance" title="Next sequence" aria-label="Advance to next sequence">▶▶</button>
-        <button class="ctl-stop" data-verb="stop" title="Pause and reset to first sequence">Reset</button>
-        <select class="session-picker" title="Jump to a specific sequence"></select>
-        <label class="ctl-speed-wrap" title="Live tempo multiplier (0.25× – 4×). Sends set-speed on release.">
-          <span class="ctl-speed-icon">🐢</span>
-          <input class="ctl-speed" type="range" min="0.25" max="4" step="0.25" value="1">
-          <span class="ctl-speed-value">1×</span>
-        </label>
-        <button class="session-call" title="Start a voice call with this client" aria-label="Start voice call with this client">📞</button>
-        <button class="session-attach" title="Send a file to this client" aria-label="Send a file to this client">📎</button>
-      </div>
-      <div class="session-error" hidden></div>
-      <div class="session-inbox"></div>
-      <div class="session-detail"></div>
-    </li>
-  </template>
 
   <!-- Inline confirm overlay (Cancel / Switch). Hidden by default. -->
   <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-overlay-msg" hidden>

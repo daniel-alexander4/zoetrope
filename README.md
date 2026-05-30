@@ -179,8 +179,8 @@ restart — every launch starts standalone.
 ### How a session works
 
 The practitioner runs Zoetrope on a machine with a public IP (or a
-forwarded port at their router) and clicks **Generate connection URL**
-in the editor's Network block. The binary:
+forwarded port at their router), opens `/manage`, and clicks **+ Generate
+URL** in the bottom HUD bar. The binary:
 
 1. Asks `api64.ipify.org` for the practitioner's public IP (one outbound
    call, user-initiated by the button click).
@@ -189,11 +189,11 @@ in the editor's Network block. The binary:
 4. Returns a connection URL of the form
    `zoetrope://join?ws=wss://<public-ip>:38130#<base64url payload>`.
 
-Each click of **+ Generate connection URL** in the manager view mints
-another URL for another client. The practitioner shares each URL with
-its intended client via text/email. Sessions are single-pair, expire
-after 10 minutes if unjoined, and survive a 60-second drop before being
-torn down.
+Each click of **+ Generate URL** in the HUD mints another URL for
+another client. The practitioner shares each URL with its intended
+client via text/email. Sessions are single-pair, expire after 10
+minutes if unjoined, and survive a 60-second drop before being torn
+down.
 
 The client opens Zoetrope, clicks **Join a session**, and pastes the
 URL. Zoetrope dials the manager over mTLS (TLS 1.3, both sides pinning
@@ -247,16 +247,16 @@ position. They no-op on continuous patterns.
 ### Client records
 
 The practitioner can keep persistent records of their clients — a name,
-free-form notes, and a session log per client. From `/manage` in MI view,
-the **Clients** card lists existing clients and lets the practitioner add
-new ones. Opening a client surfaces a notes textarea (autosaved) and a
-timeline of past sessions with date / time / duration.
+free-form notes, and a session log per client. From the **Admin** tab on
+`/manage`, the **Clients** card lists existing clients and lets the
+practitioner add new ones. Opening a client surfaces a notes textarea
+(autosaved) and a timeline of past sessions with date / time / duration.
 
 "🔗 Generate URL" from the client detail view mints a connection URL
 *bound to that client*. When the client connects, a session-log entry is
 opened automatically; when they disconnect, it's finalized with the
-duration. Connection URLs minted from the topbar "+ Generate URL" or
-from the Admin tab's Sessions card are unattached and don't log.
+duration. Connection URLs minted from the HUD's **+ Generate URL** button
+are unattached to a client and don't log.
 
 Records live under `<user-config>/zoetrope/clients/<slug>/`:
 
@@ -295,16 +295,17 @@ follow-on once multi-session usage surfaces it.
 
 ### Voice call
 
-Either side can place a voice call across an active session. The 📞
-button on each session card (manager) and in the client overlay
-(client) starts the call; the other side sees an Accept / Decline
-prompt. Once accepted, audio flows direct browser↔browser over
+Either side can place a voice call across an active session. The
+**📞 Start call** button on the Session-view Audio card (manager) and
+the 📞 in the client overlay (client) start the call; the other side
+sees an Accept / Decline prompt. Once accepted, audio flows direct
+browser↔browser over
 DTLS-SRTP (UDP) — the Go process relays only the SDP / ICE signaling
 verbs (`audio-offer` / `audio-answer` / `audio-ice` / `audio-bye`) over
 the existing mTLS WebSocket.
 
-The MI Audio card shows the active call's state pill, mic-mute, speaker
-volume slider, and an End-call button. Mic mute is local-only — the
+The Session-view Audio card shows the active call's state pill, mic-mute,
+speaker volume slider, and an End-call button. Mic mute is local-only — the
 muted user can still hear the peer. Speaker volume + mute are local.
 Hanging up sends `audio-bye` and tears the peer connection down on
 both sides.
@@ -321,17 +322,16 @@ still cause feedback that AEC won't fully suppress.
 
 ### File sharing
 
-Either side can send a file across an active session. Three ways to
-start a send:
+Either side can send a file across an active session. Ways to start a
+send:
 
-- **📎** on each session card (manager) or in the client-mode overlay
-  (client) opens a native file picker.
-- **Drag-and-drop** a file onto a session card, the MI **Files** card,
-  or the client-side overlay — the host highlights while you drag and
-  the send starts on drop.
-- **Files card** on `/manage` in MI view: pick a client, choose a file,
-  click **Send**. The button is disabled until a file is chosen and the
-  selected client has a live session.
+- **📎** in the client-mode overlay (client) opens a native file picker.
+- **Drag-and-drop** a file onto the Session-view **Files** card
+  (manager) or the client-side overlay — the host highlights while you
+  drag and the send starts on drop.
+- **Files card** on the Session view: choose a file, click **Send**.
+  It targets the connected client (no picker); the button is disabled
+  until a client is connected and a file is chosen.
 
 The sender sees a progress card with a chunks-done / chunks-total bar
 that ticks through the transfer; the receiver's `file-accept` flips it
@@ -344,9 +344,9 @@ Storage depends on whether the session is bound to a client:
 
 - **Bound session** — the file is persisted under the client's record
   at `<user-config>/zoetrope/clients/<slug>/inbox/<eid>/{meta.json, blob}`
-  and stays there across session removal and binary restarts. The MI
-  Files card lists every received file for that client with Open +
-  Dismiss; Save / Open from the inline notification fetch the same
+  and stays there across session removal and binary restarts. The
+  Session-view Files card lists every received file for the connected
+  client with Open + Dismiss; Save / Open from the inline notification fetch the same
   bytes. **Retention is the practitioner's responsibility** — zoetrope
   applies no quota, FIFO eviction, or automatic expiration; entries
   sit on disk until the practitioner dismisses them. Same framing as
