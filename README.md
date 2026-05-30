@@ -61,6 +61,7 @@ manager. The browser tab is harmless on its own.
 | diag-urbl   | upper-right ↔ bottom-left (↙)  | —                      | —          |
 | circle      | revolution                     | yes                    | —          |
 | serpentine  | raster-scan back-and-forth + interleaved return | yes        | — (see `cornerRadius`, `startCorner`, `lanes`) |
+| lightbulbs  | serpentine raster where each turn loops around a bulb | — | — (see `lanes`, `bulbSize`) |
 | fig8-h      | figure 8 from two tangent circles (∞ orientation) | yes | —          |
 | fig8-v      | figure 8 from two tangent circles (8 orientation) | yes | —          |
 | infinity-h  | trace of ∞ (lobes side by side, Lissajous) | yes          | —          |
@@ -86,6 +87,11 @@ returning to Start to close the loop. Per-item fields: `cornerRadius`
 (0–1, how round the U-turns are; 0 = sharp, 1 = full half-circle),
 `startCorner` (`tl` or `tr`), `lanes` (integer), and `direction`
 (`cw` runs the loop forward, `ccw` reverses it).
+
+The `lightbulbs` pattern shares the serpentine's interleaved closed-loop
+raster, but every turn balloons into a near-full circular loop — a "bulb"
+the ball traces before continuing down the thin lane. Per-item fields:
+`lanes` (2–8, default 3) and `bulbSize` (0–1, how large the bulbs are).
 
 `lingerSec` (global, default 0) is a vision-training aid for the linear
 patterns (h-sweep, v-sweep, diag-ulbr, diag-urbl). When > 0, the ball

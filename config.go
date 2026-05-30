@@ -49,10 +49,11 @@ type PlaylistItem struct {
 	Speed     float64 `json:"speed,omitempty"` // per-item speed override on the 0–10 scale; absent → follow the global config.speed
 	Direction string  `json:"direction,omitempty"`
 	AngleDeg  float64 `json:"angleDeg,omitempty"`
-	// Serpentine patterns only:
-	Lanes        int     `json:"lanes,omitempty"`        // number of down-lanes (2–8); absent → 3
-	CornerRadius float64 `json:"cornerRadius,omitempty"` // U-turn roundness 0–1; absent → 0 (square)
-	StartCorner  string  `json:"startCorner,omitempty"` // 'tl' or 'tr'; absent → 'tl'
+	// Serpentine + lightbulbs (lanes); serpentine-only (cornerRadius, startCorner):
+	Lanes        int     `json:"lanes,omitempty"`        // raster lane count (2–8); absent → 3
+	CornerRadius float64 `json:"cornerRadius,omitempty"` // serpentine U-turn roundness 0–1; absent → 0 (square)
+	StartCorner  string  `json:"startCorner,omitempty"` // serpentine start corner 'tl'/'tr'; absent → 'tl'
+	BulbSize     float64 `json:"bulbSize,omitempty"`     // lightbulbs bulb radius 0–1; absent → 0.3
 	// Position-sequence patterns only:
 	Steps      []SequenceStep `json:"steps,omitempty"`
 	DwellSec   float64        `json:"dwellSec,omitempty"`   // default per-step dwell time (seconds); 0 → 1.5s fallback in the engine

@@ -18,6 +18,7 @@
     'bounce':           'Bounce',
     'circle':           'Circle',
     'serpentine':       'Serpentine (raster scan)',
+    'lightbulbs':       'Lightbulbs',
     'fig8-h':           'Figure 8 (two circles, ∞)',
     'fig8-v':           'Figure 8 (two circles, 8)',
     'infinity-h':       'Infinity ∞',
@@ -32,6 +33,7 @@
     'bounce':           { color: '#f38ba8', angleDeg: 37 },
     'circle':           { color: '#a6e3a1', direction: 'cw' },
     'serpentine':       { color: '#94e2d5', direction: 'cw', cornerRadius: 0.3, startCorner: 'tl', lanes: 3 },
+    'lightbulbs':       { color: '#f2cdcd', lanes: 3, bulbSize: 0.3 },
     'fig8-h':           { color: '#89dceb', direction: 'cw' },
     'fig8-v':           { color: '#74c7ec', direction: 'cw' },
     'infinity-h':       { color: '#89b4fa', direction: 'cw' },
@@ -111,6 +113,7 @@
       node.querySelector('.corner-radius').value = item.cornerRadius ?? 0;
       node.querySelector('.start-corner').value = item.startCorner || 'tl';
       node.querySelector('.lanes').value = item.lanes ?? 3;
+      node.querySelector('.bulb-size').value = item.bulbSize ?? 0.3;
 
       node.querySelector('.color').addEventListener('input', e => {
         item.color = e.target.value;
@@ -145,6 +148,10 @@
       });
       node.querySelector('.lanes').addEventListener('input', e => {
         item.lanes = +e.target.value;
+        markDirty();
+      });
+      node.querySelector('.bulb-size').addEventListener('input', e => {
+        item.bulbSize = +e.target.value;
         markDirty();
       });
 

@@ -612,6 +612,8 @@ body.mode-field .balls-only { display: none !important; }
 .item[data-pattern="diag-ulbr"] .angle-wrap,
 .item[data-pattern="diag-urbl"] .direction-wrap,
 .item[data-pattern="diag-urbl"] .angle-wrap,
+.item[data-pattern="lightbulbs"] .direction-wrap,
+.item[data-pattern="lightbulbs"] .angle-wrap,
 .item[data-pattern="bounce"] .direction-wrap {
   display: none;
 }
@@ -622,9 +624,18 @@ body.mode-field .balls-only { display: none !important; }
    (0,1,0) loses and the control leaks onto every card. Per-pattern show rules
    are also 0,3,0 and come later in source, so they win for their pattern. */
 
-/* Serpentine-only knobs: corner roundness, starting corner, lane count. */
+/* Serpentine-only knobs: corner roundness + starting corner. */
 .item .params .serpentine-wrap { display: none; }
 .item[data-pattern="serpentine"] .serpentine-wrap { display: inline-flex; }
+
+/* Lane count — shared by serpentine and lightbulbs. */
+.item .params .lanes-wrap { display: none; }
+.item[data-pattern="serpentine"] .lanes-wrap,
+.item[data-pattern="lightbulbs"] .lanes-wrap { display: inline-flex; }
+
+/* Lightbulbs-only knob: bulb size. */
+.item .params .lightbulbs-wrap { display: none; }
+.item[data-pattern="lightbulbs"] .lightbulbs-wrap { display: inline-flex; }
 
 /* Position-sequence items: hide the continuous-pattern knobs, show the
    sequence editor (name/dwell/transit + step list). Default-hide for every

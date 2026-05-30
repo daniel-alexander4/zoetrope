@@ -25,9 +25,10 @@
     return p === 'position-sequence';
   }
 
-  // Serpentine lane count, clamped to [2, 8]. Both the renderer and the
-  // period table read it from here so the bounds can't drift.
-  function serpentineLanes(item) {
+  // Lane count for the raster patterns (serpentine, lightbulbs), clamped to
+  // [2, 8]. Renderers and the period table read it from here so the bounds
+  // can't drift.
+  function laneCount(item) {
     return Math.max(2, Math.min(8, Math.floor(item.lanes ?? 3)));
   }
 
@@ -44,6 +45,62 @@
     const turn2Len = 2 * arcLen + Math.max(0, 2 * step - 2 * r);
     const totalLen = 2 * N * laneLen + (2 * N - 2) * turn2Len + 2 * turn1Len;
     return { step, r, laneLen, arcLen, turn1Len, turn2Len, totalLen };
+  }
+
+  // Lightbulbs bulb radius from item.bulbSize (0..1). Must exceed the row
+  // spacing `step` so the wide interleave turns (gap 2·step) form real loops,
+  // and stay within ~half the box so lanes/bulbs fit. Single source for the
+  // mapping — the renderer and the period table both call it.
+  function bulbRadius(item, step, W) {
+    const f = Math.min(1, Math.max(0, item.bulbSize ?? 0.3));
+    const R = step * (1.1 + 1.4 * f); // 1.1·step .. 2.5·step
+    return Math.min(Math.max(R, step * 1.05), W * 0.48);
+  }
+
+  // Lightbulbs path geometry: serpentine's interleaved row order, but each turn
+  // is a near-full circular loop (a "bulb", radius R) the ball traverses before
+  // the next lane. Returns the ordered segment list (thin lanes + bulb arcs)
+  // and the total arc length; the renderer walks it and the period table sums
+  // it. 2N rows; bulbs reach the box edge, lanes span between the necks.
+  function lightbulbsGeom(N, R, W, H) {
+    const step = H / N;
+    const rows = 2 * N;
+    const rowIdx = i => (i < N ? 2 * i : 4 * N - 2 * i - 1);
+    const yOf = idx => -H + (idx + 0.5) * step;
+    const sideOf = i => (i % 2 === 0 ? 1 : -1);
+    const neckInset = i => {
+      const G = Math.abs(yOf(rowIdx((i + 1) % rows)) - yOf(rowIdx(i)));
+      const d = Math.sqrt(Math.max(0, R * R - (G / 2) * (G / 2)));
+      return Math.max(0, W - R - d); // |x| where this turn's necks sit
+    };
+    const segs = [];
+    let totalLen = 0;
+    for (let i = 0; i < rows; i++) {
+      const a = rowIdx(i), b = rowIdx((i + 1) % rows);
+      const ya = yOf(a), yb = yOf(b), ymid = (ya + yb) / 2, s = sideOf(i);
+      const prev = (i - 1 + rows) % rows;
+      const x0 = sideOf(prev) * neckInset(prev); // prev turn's exit neck (row a)
+      const x1 = s * neckInset(i);               // this turn's entry neck (row a)
+      const laneLen = Math.abs(x1 - x0);
+      segs.push({ lane: true, len: laneLen, x0, y0: ya, x1, y1: ya });
+      totalLen += laneLen;
+      // bulb: major arc from the row-a neck, around the outer edge, to row-b neck
+      const cx = s * (W - R);
+      const G = Math.abs(yb - ya);
+      const a0 = Math.atan2(ya - ymid, x1 - cx);
+      const half = Math.PI - Math.asin(Math.min(1, (G / 2) / R));
+      const outer = s > 0 ? 0 : Math.PI;
+      let dir = 1;
+      for (const dd of [1, -1]) {
+        const md = Math.atan2(Math.sin((a0 + dd * half) - outer), Math.cos((a0 + dd * half) - outer));
+        if (Math.abs(md) < 0.05) { dir = dd; break; }
+      }
+      const a1 = a0 + dir * 2 * half;
+      const bulbLen = R * Math.abs(a1 - a0);
+      segs.push({ lane: false, len: bulbLen, cx, cy: ymid, R, a0, a1 });
+      totalLen += bulbLen;
+    }
+    return { segs, totalLen };
   }
 
   // ---- Gaze grid (position-sequence patterns) ---------------------------
@@ -224,7 +281,7 @@
       const m = ctx.config.ballSize / 2;
       const W = Math.max(1, (vp.w - 2 * m) / 2 - 8);
       const H = Math.max(1, (vp.h - 2 * m) / 2 - 8);
-      const N = serpentineLanes(item);
+      const N = laneCount(item);
       const { step, r, laneLen, arcLen, turn1Len, turn2Len, totalLen } =
         serpentineGeom(W, H, N, item.cornerRadius);
       const cx = vp.w / 2;
@@ -278,6 +335,36 @@
           return { x: cx + flipX * dx, y: cy + dy };
         }
         s -= turnLen;
+      }
+      return { x: cx, y: cy };
+    },
+
+    'lightbulbs': (t, item, vp, ctx) => {
+      // Serpentine's interleaved raster, but every U-turn balloons into a
+      // circular "bulb" the ball loops around before the next lane. lanes is N
+      // (2N rows); bulbSize sets the loop radius. Closes by continuing the
+      // bulbs back up the gap rows — no separate return.
+      const m = ctx.config.ballSize / 2;
+      const W = Math.max(1, (vp.w - 2 * m) / 2 - 8);
+      const H = Math.max(1, (vp.h - 2 * m) / 2 - 8);
+      const N = laneCount(item);
+      const R = bulbRadius(item, H / N, W);
+      const { segs, totalLen } = lightbulbsGeom(N, R, W, H);
+      const cx = vp.w / 2;
+      const cy = vp.h / 2;
+      if (totalLen <= 0) return { x: cx, y: cy };
+
+      let s = (t - Math.floor(t)) * totalLen;
+      for (const seg of segs) {
+        if (s < seg.len) {
+          if (seg.lane) {
+            const f = seg.len > 0 ? s / seg.len : 0;
+            return { x: cx + seg.x0 + (seg.x1 - seg.x0) * f, y: cy + seg.y0 };
+          }
+          const a = seg.a0 + (seg.a1 - seg.a0) * (s / seg.len);
+          return { x: cx + seg.cx + seg.R * Math.cos(a), y: cy + seg.cy + seg.R * Math.sin(a) };
+        }
+        s -= seg.len;
       }
       return { x: cx, y: cy };
     },
@@ -451,20 +538,31 @@
     }
     return len;
   }
+  const SPEED_CIRCLE_LEN = refPathLen({ pattern: 'circle' });
   const PERIOD_FACTOR = (() => {
-    const circleLen = refPathLen({ pattern: 'circle' });
     const f = { serpentine: {} };
     for (const name of Object.keys(patterns)) {
-      if (name === 'serpentine' || isSequencePattern(name)) continue;
-      f[name] = Math.max(1e-3, refPathLen({ pattern: name }) / circleLen);
+      // serpentine/lightbulbs are parametric (lanes, bulbSize) — handled live
+      // in periodFactor; the rest get a static factor sampled once here.
+      if (name === 'serpentine' || name === 'lightbulbs' || isSequencePattern(name)) continue;
+      f[name] = Math.max(1e-3, refPathLen({ pattern: name }) / SPEED_CIRCLE_LEN);
     }
     for (let n = 2; n <= 8; n++) {
-      f.serpentine[n] = Math.max(1e-3, refPathLen({ pattern: 'serpentine', lanes: n }) / circleLen);
+      f.serpentine[n] = Math.max(1e-3, refPathLen({ pattern: 'serpentine', lanes: n }) / SPEED_CIRCLE_LEN);
     }
     return f;
   })();
+  // Reference inner box (16:9 ref viewport at the default ball size), for the
+  // parametric patterns whose length isn't pre-sampled above.
+  const SPEED_REF_W = (SPEED_REF_VP.w - SPEED_REF_CTX.config.ballSize) / 2 - 8;
+  const SPEED_REF_H = (SPEED_REF_VP.h - SPEED_REF_CTX.config.ballSize) / 2 - 8;
   function periodFactor(item) {
-    if (item.pattern === 'serpentine') return PERIOD_FACTOR.serpentine[serpentineLanes(item)];
+    if (item.pattern === 'serpentine') return PERIOD_FACTOR.serpentine[laneCount(item)];
+    if (item.pattern === 'lightbulbs') {
+      const N = laneCount(item);
+      const R = bulbRadius(item, SPEED_REF_H / N, SPEED_REF_W);
+      return Math.max(1e-3, lightbulbsGeom(N, R, SPEED_REF_W, SPEED_REF_H).totalLen / SPEED_CIRCLE_LEN);
+    }
     return PERIOD_FACTOR[item.pattern] ?? 1;
   }
 
