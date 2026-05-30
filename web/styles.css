@@ -598,11 +598,6 @@ body.mode-field .balls-only { display: none !important; }
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-.hide-irrelevant .direction-wrap,
-.hide-irrelevant .angle-wrap {
-  display: none;
-}
-
 .item[data-pattern="circle"] .angle-wrap,
 .item[data-pattern="infinity-h"] .angle-wrap,
 .item[data-pattern="infinity-v"] .angle-wrap,
@@ -621,14 +616,20 @@ body.mode-field .balls-only { display: none !important; }
   display: none;
 }
 
+/* Per-pattern control gating. NOTE: `.item .params label` (display:inline-flex,
+   specificity 0,2,1) styles every params-row label, so a conditional hide must
+   be `.item .params .X-wrap` scoped (0,3,0) to beat it — a bare `.X-wrap`
+   (0,1,0) loses and the control leaks onto every card. Per-pattern show rules
+   are also 0,3,0 and come later in source, so they win for their pattern. */
+
 /* Serpentine-only knobs: corner roundness, starting corner, lane count. */
-.serpentine-wrap { display: none; }
+.item .params .serpentine-wrap { display: none; }
 .item[data-pattern="serpentine"] .serpentine-wrap { display: inline-flex; }
 
 /* Position-sequence items: hide the continuous-pattern knobs, show the
    sequence editor (name/dwell/transit + step list). Default-hide for every
    other pattern via .iemt-wrap. */
-.iemt-wrap { display: none; }
+.item .params .iemt-wrap { display: none; }
 .item[data-pattern="position-sequence"] .direction-wrap,
 .item[data-pattern="position-sequence"] .angle-wrap {
   display: none;
