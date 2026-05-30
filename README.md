@@ -40,8 +40,9 @@ manager. The browser tab is harmless on its own.
   - Speed multiplier (`0.25×` – `4×`)
   - Gear icon — toggle the editor panel
 - **Editor panel (right)** — global controls at top (background color,
-  ball size, speed on a 0–10 scale — higher is faster, 10 ≈ one
-  cycle per second); below them, a **Library** picker that selects the
+  ball size, speed on a 0–10 scale — higher is faster; the dial sets the
+  ball's on-screen speed, so every pattern moves at the same pace at a
+  given setting); below them, a **Library** picker that selects the
   active playlist + buttons to create / rename / duplicate / delete
   playlists; then add / reorder / delete pattern items in the active
   playlist; per-item color / repeats / direction / angle. Click
@@ -67,11 +68,13 @@ manager. The browser tab is harmless on its own.
 | bounce      | `max(w, h)` pixels of travel   | —                      | yes (initial heading) |
 | position-sequence | ordered walk through named gaze targets (8-point grid + center) | — | —          |
 
-`speed` (0–10 scale, global; higher = faster, 10 means one cycle per
-second) and `ballSize` (pixels, global) apply to every item. `repeats`
-(per item) is how many cycles play before the playlist advances. The
-speed multiplier in the transport bar scales `speed` at runtime without
-persisting.
+`speed` (0–10 scale, global; higher = faster) sets the ball's on-screen
+pixel speed — each pattern's cycle is normalized by its path length so
+they all move at the same pace at a given setting (calibrated to the
+circle; exact on a 16:9 viewport). `ballSize` (pixels, global) applies to
+every item. `repeats` (per item) is how many cycles play before the
+playlist advances. The speed multiplier in the transport bar scales
+`speed` at runtime without persisting.
 
 The `serpentine` pattern is a closed-loop raster scan. The ball sweeps
 across `lanes` horizontal lanes (2–8, default 3), dropping into the next

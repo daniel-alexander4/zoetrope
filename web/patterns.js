@@ -27,14 +27,13 @@
 
   // Serpentine lane count, clamped to [2, 8]. Both the renderer and the
   // period table read it from here so the bounds can't drift.
-  const SERPENTINE_LANE_REF = 3;
   function serpentineLanes(item) {
     return Math.max(2, Math.min(8, Math.floor(item.lanes ?? 3)));
   }
 
   // Serpentine path geometry for an inner box (half-width W, half-height H),
   // N lanes, and a cornerRadius in [0,1]. Single source for the segment
-  // lengths the renderer walks AND the totalLen the period scaling needs.
+  // lengths the renderer walks along the path.
   function serpentineGeom(W, H, N, cornerRadius) {
     const step = (2 * H) / (2 * N);
     const round = Math.min(1, Math.max(0, cornerRadius ?? 0));
@@ -46,24 +45,6 @@
     const totalLen = 2 * N * laneLen + (2 * N - 2) * turn2Len + 2 * turn1Len;
     return { step, r, laneLen, arcLen, turn1Len, turn2Len, totalLen };
   }
-
-  // The ball moves at uniform arc-length speed, so its perceived speed is
-  // totalLen/period — and totalLen grows with lanes. To hold speed constant
-  // as lanes change, computeCycleSec scales the period by the path length
-  // relative to the 3-lane reference. The ratio is measured on a fixed 16:9
-  // reference box (not the live viewport) so the client and the manager
-  // mirror compute the same period and stay frame-synced. It's exact on 16:9
-  // and within ~1% across landscape; portrait keeps a small residual that no
-  // viewport-independent period can remove. cornerRadius shifts the ratio
-  // <1%, so the table ignores it (uses 0).
-  const SERPENTINE_PERIOD_FACTOR = (() => {
-    const refW = (1920 - 80) / 2 - 8; // 16:9 viewport at the default ball size
-    const refH = (1080 - 80) / 2 - 8;
-    const base = serpentineGeom(refW, refH, SERPENTINE_LANE_REF, 0).totalLen;
-    const tbl = {};
-    for (let n = 2; n <= 8; n++) tbl[n] = serpentineGeom(refW, refH, n, 0).totalLen / base;
-    return tbl;
-  })();
 
   // ---- Gaze grid (position-sequence patterns) ---------------------------
   // Named targets on a 3×3 grid: 8 cardinals/diagonals + center. Coordinates
@@ -109,16 +90,27 @@
     return Math.max(0.1, steps.length * (dwell + transit));
   }
 
+  // Base moving-cycle duration for a continuous pattern: the time for one
+  // full traversal, excluding any edge-linger dwell. The speed dial sets a
+  // target ball pixel-speed, so the period is normalized by the pattern's
+  // path length relative to the circle (periodFactor, built at load below) —
+  // every pattern then sweeps at the same speed for a given dial. Returns
+  // Infinity when paused. (A future per-item speed knob multiplies cps here.)
+  function baseCycleSec(item, ctx) {
+    const cps = (Math.max(0, ctx.config.speed ?? 2) / 10) * (ctx.speedMul ?? 1);
+    if (cps <= 0) return Infinity;
+    return periodFactor(item) / cps;
+  }
+
   // Fraction of the current cycle spent in each linger phase. 0 when
   // linger is disabled, when the pattern isn't linear, or when paused.
-  function lingerFrac(pattern, ctx) {
-    if (!isLinearPattern(pattern)) return 0;
+  function lingerFrac(item, ctx) {
+    if (!isLinearPattern(item.pattern)) return 0;
     const sec = ctx.config.lingerSec ?? 0;
     if (sec <= 0) return 0;
-    const cps = (Math.max(0, ctx.config.speed ?? 2) / 10) * (ctx.speedMul ?? 1);
-    if (cps <= 0) return 0;
-    const baseCycle = 1 / cps;
-    return sec / (baseCycle + 2 * sec);
+    const base = baseCycleSec(item, ctx);
+    if (!isFinite(base)) return 0;
+    return sec / (base + 2 * sec);
   }
 
   // computeCycleSec returns how many seconds one full cycle of `item` takes,
@@ -126,23 +118,16 @@
   // it to scale dt → t; the mirror uses it to extrapolate t forward between
   // state snapshots from the client.
   function computeCycleSec(item, ctx) {
-    const userSpeed = Math.max(0, ctx.config.speed ?? 2);
-    const speedMul = ctx.speedMul ?? 1;
     if (isSequencePattern(item.pattern)) {
-      const speedScale = (userSpeed / 2) * speedMul;
+      const userSpeed = Math.max(0, ctx.config.speed ?? 2);
+      const speedScale = (userSpeed / 2) * (ctx.speedMul ?? 1);
       if (speedScale <= 0) return Infinity;
       return sequenceCycleSec(item) / speedScale;
     }
-    const cps = (userSpeed / 10) * speedMul;
-    if (cps <= 0) return Infinity;
+    const base = baseCycleSec(item, ctx);
+    if (!isFinite(base)) return Infinity;
     const linger = ctx.config.lingerSec ?? 0;
-    let baseCycle = 1 / cps;
-    if (item.pattern === 'serpentine') {
-      baseCycle *= SERPENTINE_PERIOD_FACTOR[serpentineLanes(item)];
-    }
-    return isLinearPattern(item.pattern) && linger > 0
-      ? baseCycle + 2 * linger
-      : baseCycle;
+    return isLinearPattern(item.pattern) && linger > 0 ? base + 2 * linger : base;
   }
 
   // For linear patterns: map cycle fraction t to a position in [-1, +1]
@@ -202,7 +187,7 @@
       const amp = (vp.w - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('h-sweep', ctx), ctx);
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac(item, ctx), ctx);
       return { x: cx + amp * pos, y: cy, sizeMul };
     },
 
@@ -211,7 +196,7 @@
       const amp = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('v-sweep', ctx), ctx);
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac(item, ctx), ctx);
       return { x: cx, y: cy + amp * pos, sizeMul };
     },
 
@@ -383,7 +368,7 @@
       const ampY = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('diag-ulbr', ctx), ctx);
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac(item, ctx), ctx);
       return { x: cx + ampX * pos, y: cy + ampY * pos, sizeMul };
     },
 
@@ -393,7 +378,7 @@
       const ampY = (vp.h - 2 * m) / 2;
       const cx = vp.w / 2;
       const cy = vp.h / 2;
-      const { pos, sizeMul } = linearSchedule(t, lingerFrac('diag-urbl', ctx), ctx);
+      const { pos, sizeMul } = linearSchedule(t, lingerFrac(item, ctx), ctx);
       return { x: cx - ampX * pos, y: cy + ampY * pos, sizeMul };
     },
 
@@ -437,6 +422,49 @@
       return { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
     },
   };
+
+  // ---- Ball-speed normalization ----------------------------------------
+  // Each continuous pattern traces a different path length per cycle, so at a
+  // fixed cycles-per-second a long path (serpentine) sweeps far faster than a
+  // short one (circle). To make the speed dial mean ball pixel-speed instead,
+  // baseCycleSec divides the period by periodFactor — the pattern's path
+  // length relative to the circle. Lengths are walked once, here, on a fixed
+  // 16:9 reference viewport rather than the live one, so the client and the
+  // manager mirror derive identical periods and stay frame-synced. Exact on
+  // 16:9; other aspect ratios keep a small residual no vp-independent period
+  // can remove. The circle is the 1.0 anchor (its feel at a given dial is
+  // unchanged). Serpentine's length grows with lanes, so it's keyed per lane.
+  const SPEED_REF_VP = { w: 1920, h: 1080 };
+  const SPEED_REF_CTX = {
+    config: { ballSize: 80, lingerSec: 0 },
+    speedMul: 1, repeatIdx: 0, bounceStart: { x: 960, y: 540 },
+  };
+  function refPathLen(item) {
+    const fn = patterns[item.pattern];
+    let prev = fn(0, item, SPEED_REF_VP, SPEED_REF_CTX), len = 0;
+    for (let i = 1; i <= 4000; i++) {
+      const p = fn(i / 4000, item, SPEED_REF_VP, SPEED_REF_CTX);
+      len += Math.hypot(p.x - prev.x, p.y - prev.y);
+      prev = p;
+    }
+    return len;
+  }
+  const PERIOD_FACTOR = (() => {
+    const circleLen = refPathLen({ pattern: 'circle' });
+    const f = { serpentine: {} };
+    for (const name of Object.keys(patterns)) {
+      if (name === 'serpentine' || isSequencePattern(name)) continue;
+      f[name] = Math.max(1e-3, refPathLen({ pattern: name }) / circleLen);
+    }
+    for (let n = 2; n <= 8; n++) {
+      f.serpentine[n] = Math.max(1e-3, refPathLen({ pattern: 'serpentine', lanes: n }) / circleLen);
+    }
+    return f;
+  })();
+  function periodFactor(item) {
+    if (item.pattern === 'serpentine') return PERIOD_FACTOR.serpentine[serpentineLanes(item)];
+    return PERIOD_FACTOR[item.pattern] ?? 1;
+  }
 
   window.zoetropePatterns = {
     patterns,
