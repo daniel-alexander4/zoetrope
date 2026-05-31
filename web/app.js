@@ -111,8 +111,18 @@
       state.t -= 1;
       state.repeatIdx += 1;
       if (state.repeatIdx >= (item.repeats || 1)) {
-        const next = (state.itemIdx + 1) % currentPlaylist().items.length;
-        enterItem(next);
+        const pl = currentPlaylist();
+        const atLastItem = state.itemIdx + 1 >= pl.items.length;
+        if (atLastItem && pl.loop === false) {
+          // Non-looping playlist finished: rewind to the first item's
+          // start and stop. Pausing here propagates to the manager mirror
+          // via the state push; Dan re-engages play to run it again.
+          enterItem(0);
+          pause();
+          schedulePushClientState();
+          return;
+        }
+        enterItem((state.itemIdx + 1) % pl.items.length);
         return;
       }
     }

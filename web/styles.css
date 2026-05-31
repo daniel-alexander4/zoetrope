@@ -330,6 +330,23 @@ body.mode-field .balls-only { display: none !important; }
   cursor: pointer;
 }
 
+/* Per-playlist Loop toggle sits in the library row (index.html) and the
+   editor-section header (/manage). Inline-flex so the box + label align on
+   one line regardless of which page hosts it. */
+.lib-loop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--subtext);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lib-loop input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
 #editor .global input[type="number"] {
   width: 64px;
   background: var(--base);

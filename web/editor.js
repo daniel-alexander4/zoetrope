@@ -403,6 +403,8 @@
     }
     const del = document.getElementById('lib-del');
     if (del) del.disabled = playlists.length <= 1;
+    const loop = document.getElementById('lib-loop');
+    if (loop) loop.checked = currentPlaylist()?.loop !== false;
   }
 
   function distinctCategories() {
@@ -481,7 +483,7 @@
     }
     if (libraryEditMode === 'new') {
       const unique = uniquePlaylistName(name, null);
-      state.config.playlists.push({ name: unique, category, items: [] });
+      state.config.playlists.push({ name: unique, category, loop: true, items: [] });
       state.config.activePlaylist = unique;
     } else if (libraryEditMode === 'rename') {
       const cur = currentPlaylist();
@@ -505,6 +507,7 @@
     state.config.playlists.push({
       name,
       category: cur.category,
+      loop: cur.loop !== false,
       items: JSON.parse(JSON.stringify(cur.items || [])),
     });
     state.config.activePlaylist = name;
@@ -536,6 +539,11 @@
       markDirty();
       renderPlaylist();
       opts.onEnterItem(0);
+    });
+    bindChange('lib-loop', e => {
+      const pl = currentPlaylist();
+      if (pl) pl.loop = e.target.checked;
+      markDirty();
     });
     bindClick('lib-new', () => openLibraryEdit('new'));
     bindClick('lib-rename', () => openLibraryEdit('rename'));

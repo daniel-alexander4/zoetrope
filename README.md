@@ -145,6 +145,12 @@ New playlists default to the currently-active playlist's category;
 grouping (e.g. add an EMDR set). Renames are name-collision-safe — a
 duplicate name gets ` (2)`, ` (3)` appended automatically.
 
+Each playlist has a **Loop** toggle (next to the picker). With Loop on
+(the default) the playlist cycles back to the first item after the last;
+with it off the playlist rewinds to its first item and stops there when it
+reaches the end — re-engage play to run it again. The toggle applies to
+built-in playlists too.
+
 In manager mode, switching the active playlist (or editing any other
 config field) pushes the fresh config to every connected client mid-
 session; the client returns to its own library when the session ends.
