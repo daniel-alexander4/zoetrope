@@ -598,15 +598,6 @@
     syncFromConfig();
   }
 
-  // applyConfig is called when an external source replaces the config
-  // (e.g. a set-config push from a manager). Same end-state as
-  // loadConfig but without the fetch.
-  function applyConfig(newCfg) {
-    state.config = newCfg;
-    opts.onEnterItem(0);
-    syncFromConfig();
-  }
-
   function syncFromConfig() {
     setVal('bg-color', state.config.background || '#000000');
     setVal('ball-size', state.config.ballSize);
@@ -614,7 +605,6 @@
     setVal('linger-input', state.config.lingerSec);
     setVal('linger-lead-input', state.config.lingerLeadFrac ?? 0);
     setChecked('show-position-labels', !!state.config.showPositionLabels);
-    setVal('max-transfer-mib', Math.round((state.config.maxTransferBytes ?? 0) / (1024 * 1024)));
     applyReadOnly();
     if (state.config.field) {
       setVal('field-speed-input', state.config.field.speed ?? 3);
@@ -752,11 +742,6 @@
     bindInput('linger-input', e => { state.config.lingerSec = +e.target.value; markDirty(); });
     bindInput('linger-lead-input', e => { state.config.lingerLeadFrac = +e.target.value; markDirty(); });
     bindChange('show-position-labels', e => { state.config.showPositionLabels = e.target.checked; markDirty(); });
-    bindInput('max-transfer-mib', e => {
-      const mib = Math.max(0, +e.target.value | 0);
-      state.config.maxTransferBytes = mib * 1024 * 1024;
-      markDirty();
-    });
   }
 
   function wireTabHandlers() {
@@ -861,7 +846,6 @@
   window.zoetropeEditor = {
     init,
     loadConfig,
-    applyConfig,
     renderPlaylist,
     markClean,
     PATTERN_LABELS,

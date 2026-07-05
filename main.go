@@ -38,34 +38,22 @@ func main() {
 		log.Fatalf("init config: %v", err)
 	}
 
-	clientsRoot, err := clientsRootDir(appName)
-	if err != nil {
-		log.Fatalf("locate clients dir: %v", err)
-	}
-	clients, err := newClientsStore(clientsRoot)
-	if err != nil {
-		log.Fatalf("init clients store: %v", err)
-	}
-
 	hb := &heartbeat{}
-	bus := newEventBus()
-	modes := newModeState(appName, bus, store, clients)
-	mux, err := newRouter(store, hb, bus, modes)
+	mux, err := newRouter(store, hb)
 	if err != nil {
 		log.Fatalf("router: %v", err)
 	}
 
 	// Prefer a stable port so a stale browser tab still points at the
 	// live server after a restart. Before binding, ask any prior zoetrope
-	// to exit — keeps a fresh launch on the canonical ports even when
-	// the previous binary outlived its browser tab. Wait for both the
-	// HTTP port (38129) and the manager mTLS port (38130) to free so a
-	// subsequent Hosting click doesn't race against the old binary's
-	// listener teardown. If a non-zoetrope process is camping on 38129
-	// we fall back to a random free port so we still come up.
+	// to exit — keeps a fresh launch on the canonical port even when the
+	// previous binary outlived its browser tab, and waits for the port to
+	// free so we don't race the old binary's listener teardown. If a
+	// non-zoetrope process is camping on 38129 we fall back to a random
+	// free port so we still come up.
 	const httpAddr = "127.0.0.1:38129"
 	pidPath, _ := pidFilePath(appName)
-	killPriorInstances(pidPath, httpAddr, managerListenAddr)
+	killPriorInstances(pidPath, httpAddr)
 	ln, err := net.Listen("tcp", httpAddr)
 	if err != nil {
 		log.Printf("%s unavailable (%v); using random free port", httpAddr, err)
@@ -113,8 +101,7 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				modes.sweepTransfers()
-				if modes.ShouldShutdown(hb) {
+				if hb.Stale(heartbeatTimeout) {
 					close(watchdogQuit)
 					return
 				}
@@ -131,14 +118,17 @@ func main() {
 		}
 	case sig := <-sigCh:
 		log.Printf("received %s, shutting down", sig)
-		modes.Standalone()
 		shutdownServer(srv)
 	case <-watchdogQuit:
-		log.Printf("idle shutdown (mode=%s)", modes.Mode())
-		modes.Standalone()
+		log.Printf("idle shutdown")
 		shutdownServer(srv)
 	}
 }
+
+// heartbeatTimeout is how long the server runs without a browser ping
+// before shutting itself down. The frontend pings /heartbeat every 5s,
+// so this tolerates a tab that's been closed or gone to sleep.
+const heartbeatTimeout = 90 * time.Second
 
 func shutdownServer(srv *http.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -244,9 +234,8 @@ func scanProcForZoetrope(self int) []int {
 }
 
 // waitPortsFree polls each addr until net.Listen succeeds, sharing one
-// budget across all addrs. The manager-mode mTLS listener (:38130) lags
-// the SIGTERM by ~1s while modes.Standalone() unwinds — without this we
-// can race the prior binary and fail a later modes.Host() bind.
+// budget across all addrs — so a fresh launch doesn't race the prior
+// binary's listener teardown after we SIGTERM it.
 func waitPortsFree(budget time.Duration, addrs ...string) {
 	deadline := time.Now().Add(budget)
 	for _, addr := range addrs {

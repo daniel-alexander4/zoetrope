@@ -7,15 +7,10 @@
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body class="mode-balls nmode-standalone">
+<body class="mode-balls">
   <canvas id="stage"></canvas>
 
   <div id="hud">
-    <nav class="mode-pills" aria-label="Mode">
-      <button class="mpill" data-mode="standalone">Standalone</button>
-      <button class="mpill" data-mode="client">Client</button>
-      <button class="mpill" data-mode="hosting">Hosting</button>
-    </nav>
     <div id="transport">
       <div class="tabs">
         <button id="tab-balls" class="tab active" title="Ball patterns">Balls</button>
@@ -108,11 +103,6 @@
           <input type="checkbox" id="show-position-labels"> Show position labels
         </label>
       </div>
-      <div class="global" title="Largest file this machine will send or accept over a session. 0 disables file transfer.">
-        <label>Max transfer size (MiB)
-          <input type="number" id="max-transfer-mib" min="0" max="4096" step="1">
-        </label>
-      </div>
     </details>
     <div class="global library-row balls-only">
       <span class="group-label">Library</span>
@@ -192,50 +182,6 @@
     </li>
   </template>
 
-  <!-- Client-mode overlay: pill, call (voice), attach (file send), and
-       leave button when in client mode. Inbound file notifications and
-       the in-call audio controls stack below this. -->
-  <div id="client-status">
-    <span id="client-pill" data-state="connecting">Connecting…</span>
-    <span id="client-rec-pill" class="client-rec-pill" hidden>🔴 Practitioner is recording — <a id="client-rec-revoke" href="#">Revoke</a></span>
-    <button id="btn-client-pause" title="Pause the animation locally. The practitioner sees your pause and cannot override it.">⏸ Pause</button>
-    <button id="btn-client-call" title="Start a voice call with the practitioner" aria-label="Start voice call with practitioner">📞</button>
-    <button id="btn-client-attach" title="Send a file to the practitioner" aria-label="Send a file to the practitioner">📎</button>
-    <button id="btn-client-record" title="Record this call to your local Downloads folder" hidden>🎙 Record</button>
-    <button id="btn-client-record-stop" title="Stop recording and save to Downloads" class="danger" hidden>⏹ Stop</button>
-    <button id="btn-leave" title="End the session and return to standalone">Leave session</button>
-  </div>
-
-  <!-- Practitioner has requested to record the call; shown until the
-       client chooses Allow or Deny. Sends capture-response either way. -->
-  <div id="capture-consent" class="capture-consent" role="dialog" aria-modal="true" aria-labelledby="capture-consent-heading" hidden>
-    <div class="capture-consent-card">
-      <p id="capture-consent-heading">The practitioner is asking to record this session.</p>
-      <p class="capture-consent-hint">Audio from both of you will be captured to their clinical record. You can revoke consent at any time during the recording — your recording will be discarded if you do.</p>
-      <div class="capture-consent-actions">
-        <button id="capture-consent-allow" type="button" class="primary-cta">Allow recording</button>
-        <button id="capture-consent-deny" type="button" class="ghost">Deny</button>
-      </div>
-    </div>
-  </div>
-  <div id="client-audio" hidden>
-    <div id="client-audio-incoming" hidden>
-      <span>Incoming call from the practitioner</span>
-      <button id="client-audio-accept" type="button" class="primary-cta">Accept</button>
-      <button id="client-audio-decline" type="button" class="ghost">Decline</button>
-    </div>
-    <div id="client-audio-active" hidden>
-      <span id="client-audio-state">Connecting…</span>
-      <button id="client-audio-mic" type="button">🎤 Mute</button>
-      <label class="audio-vol">
-        <span>🔊</span>
-        <input type="range" id="client-audio-volume" min="0" max="100" step="1" value="100">
-      </label>
-      <button id="client-audio-hangup" type="button" class="danger">End call</button>
-    </div>
-  </div>
-  <div id="client-inbox"></div>
-
   <!-- Inline confirm overlay (Cancel / Switch). Hidden by default. -->
   <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-overlay-msg" hidden>
     <div class="confirm-card">
@@ -247,28 +193,9 @@
     </div>
   </div>
 
-  <!-- Join dialog -->
-  <div id="join-dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="join-dialog-heading">
-    <div class="dialog-card">
-      <h3 id="join-dialog-heading">Join a session</h3>
-      <label class="dialog-field">Connection URL
-        <textarea id="join-url" rows="3" placeholder="zoetrope://join?ws=…#…" autocomplete="off"></textarea>
-        <span class="dialog-hint">Paste the connection URL your practitioner sent.</span>
-      </label>
-      <div class="dialog-actions">
-        <button id="join-cancel" class="ghost">Cancel</button>
-        <button id="join-confirm">Join</button>
-      </div>
-      <div id="join-error" class="dialog-error"></div>
-    </div>
-  </div>
-
   <script src="modal.js"></script>
   <script src="editor.js"></script>
   <script src="patterns.js"></script>
-  <script src="transfer.js"></script>
-  <script src="audio.js"></script>
-  <script src="capture.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

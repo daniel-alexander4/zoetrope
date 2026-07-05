@@ -5,11 +5,10 @@
 // vp is {w, h} of the target canvas, and ctx carries the runtime state
 // the patterns need (config, speedMul, repeatIdx, bounceStart).
 //
-// Both the client animation loop (web/app.js) and the manager mirror
-// (web/manage.js) call into here — there is no parallel position
-// computation anywhere else. The signature takes ctx explicitly so the
-// mirror can render the client's state into a different-sized canvas
-// without sharing the client's locals.
+// The animation loop (web/app.js) calls into here — there is no parallel
+// position computation anywhere else. The signature takes ctx explicitly
+// so the caller supplies runtime state without patterns reaching into
+// its locals.
 
 (() => {
   'use strict';
@@ -173,9 +172,8 @@
   }
 
   // computeCycleSec returns how many seconds one full cycle of `item` takes,
-  // given the user-facing speed config in ctx. The client's advance() uses
-  // it to scale dt → t; the mirror uses it to extrapolate t forward between
-  // state snapshots from the client.
+  // given the user-facing speed config in ctx. The animation loop's
+  // advance() uses it to scale dt → t.
   function computeCycleSec(item, ctx) {
     if (isSequencePattern(item.pattern)) {
       const userSpeed = Math.max(0, item.speed ?? ctx.config.speed ?? 2);
@@ -474,7 +472,7 @@
     'bounce': (t, item, vp, ctx) => {
       // Straight-line travel folded off the inner walls. bounceStart is
       // the per-canvas anchor where the trajectory starts at this item's
-      // first frame; the mirror uses its own canvas center.
+      // first frame.
       const m = ctx.config.ballSize / 2;
       const innerW = vp.w - 2 * m;
       const innerH = vp.h - 2 * m;
@@ -518,8 +516,8 @@
   // short one (circle). To make the speed dial mean ball pixel-speed instead,
   // baseCycleSec divides the period by periodFactor — the pattern's path
   // length relative to the circle. Lengths are walked once, here, on a fixed
-  // 16:9 reference viewport rather than the live one, so the client and the
-  // manager mirror derive identical periods and stay frame-synced. Exact on
+  // 16:9 reference viewport rather than the live one, so periods stay stable
+  // regardless of window size. Exact on
   // 16:9; other aspect ratios keep a small residual no vp-independent period
   // can remove. The circle is the 1.0 anchor (its feel at a given dial is
   // unchanged). Serpentine's length grows with lanes, so it's keyed per lane.

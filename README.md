@@ -151,10 +151,6 @@ with it off the playlist rewinds to its first item and stops there when it
 reaches the end — re-engage play to run it again. The toggle applies to
 built-in playlists too.
 
-In manager mode, switching the active playlist (or editing any other
-config field) pushes the fresh config to every connected client mid-
-session; the client returns to its own library when the session ends.
-
 ## Safety and framing
 
 Zoetrope is a configurable gaze-target animation tool — a piece of
@@ -164,235 +160,6 @@ named modality (saccade training, anti-saccade, brainspotting fixation,
 EMDR, etc.) are starting templates for use **with a qualified
 practitioner** of that modality. Nothing in this README or the in-app
 copy is a therapeutic claim.
-
-## Networking — manager / client / standalone
-
-Zoetrope has three runtime modes. Every launch starts in **standalone**
-(the existing behavior, full local control). A practitioner can host a
-session for a remote client; the client pastes the resulting URL into
-their own Zoetrope and the practitioner drives the animation in real
-time.
-
-For use with a qualified IEMT / EMDR / ART practitioner. Zoetrope is a
-tool, not a treatment.
-
-### Modes
-
-- **Standalone** — the default. Full local UI; nothing on the network.
-- **Manager** — replaces the animation viewport with a control surface.
-  The binary listens on a public port and accepts connections from
-  clients who paste the session URL.
-- **Client** — the animation viewport is unchanged but the transport
-  controls collapse to a connection pill plus a small overlay (Pause,
-  📞 Call, 📎 Attach, Leave session). The practitioner drives every
-  transport action *except* the client's local Pause: while paused the
-  practitioner's play/advance/etc. verbs are queued (last intent wins
-  on Resume) but do not override the client's freeze. The practitioner
-  sees "🛑 client paused" on the session card so they know.
-
-Mode is per-binary (not per-tab) and is **not persisted** across
-restart — every launch starts standalone.
-
-### How a session works
-
-The practitioner runs Zoetrope on a machine with a public IP (or a
-forwarded port at their router), opens `/manage`, and clicks **+ Generate
-URL** in the bottom HUD bar. The binary:
-
-1. Asks `api64.ipify.org` for the practitioner's public IP (one outbound
-   call, user-initiated by the button click).
-2. Enters manager mode and binds the hardcoded port **38130**.
-3. Mints a fresh per-session client cert.
-4. Returns a connection URL of the form
-   `zoetrope://join?ws=wss://<public-ip>:38130#<base64url payload>`.
-
-Each click of **+ Generate URL** in the HUD mints another URL for
-another client. The practitioner shares each URL with its intended
-client via text/email. Sessions are single-pair, expire after 10
-minutes if unjoined, and survive a 60-second drop before being torn
-down.
-
-The client opens Zoetrope, clicks **Join a session**, and pastes the
-URL. Zoetrope dials the manager over mTLS (TLS 1.3, both sides pinning
-each other's self-signed cert by SHA-256 fingerprint); no CA, no
-domain name, no plaintext. If the URL is malformed, expired, or the
-manager's cert doesn't match the pin, the client refuses to connect.
-
-### Practitioner identity
-
-On first entry into manager mode, Zoetrope generates a long-lived
-Ed25519 keypair + self-signed cert and stores it at:
-
-- Linux: `~/.config/zoetrope/practitioner_identity.pem`
-- macOS: `~/Library/Application Support/zoetrope/practitioner_identity.pem`
-- Windows: `%APPDATA%\zoetrope\practitioner_identity.pem`
-
-Mode `0600`. Every session URL the practitioner mints carries this
-cert's fingerprint, which the client pins. Clients can confirm "same
-practitioner as last time" by comparing fingerprints across URLs.
-
-Rotation is manual: delete the file and re-enter manager mode. **Doing
-so invalidates every session URL the practitioner has ever shared.**
-
-### Firewalls and ports
-
-The listen port is hardcoded to **38130**. Two firewall layers to set up:
-
-1. **Router NAT** — forward TCP `38130` from your public IP to the host
-   running Zoetrope. The client does no firewall work.
-2. **Local OS firewall** — Windows Defender Firewall / macOS firewall /
-   `ufw` will block inbound on `38130` by default. Allow inbound TCP on
-   `38130` for `zoetrope`.
-
-If the listener starts but no client ever reaches it, check both.
-
-### Protocol
-
-JSON frames over a WebSocket inside the TLS connection. Manager → client:
-`play`, `pause`, `resume`, `advance`, `back`, `hold`, `release`,
-`advance-position`, `back-position`, `stop`, `set-sequence`,
-`set-config`. Client → manager: `hello`, `sequences`, `state`.
-Bidirectional: `file-offer`, `file-accept`, `file-chunk`, `file-cancel`
-(see File sharing below); `audio-offer`, `audio-answer`, `audio-ice`,
-`audio-bye` (see Voice call). Every frame carries `pv: 1` so future
-revisions can negotiate cleanly.
-
-`advance-position` / `back-position` step a position-sequence pattern by
-one position (with wrap); `hold` pauses with a snap to the current
-position. They no-op on continuous patterns.
-
-### Client records
-
-The practitioner can keep persistent records of their clients — a name,
-free-form notes, and a session log per client. From the **Admin** tab on
-`/manage`, the **Clients** card lists existing clients and lets the
-practitioner add new ones. Opening a client surfaces a notes textarea
-(autosaved) and a timeline of past sessions with date / time / duration.
-
-"🔗 Generate URL" from the client detail view mints a connection URL
-*bound to that client*. When the client connects, a session-log entry is
-opened automatically; when they disconnect, it's finalized with the
-duration. Connection URLs minted from the HUD's **+ Generate URL** button
-are unattached to a client and don't log.
-
-Records live under `<user-config>/zoetrope/clients/<slug>/`:
-
-```
-clients/
-  alice-7f3a2/
-    client.json    {id, name, createdAt}
-    notes.md       rolling notes; practitioner-owned, no auto-edits
-    sessions/
-      2026-05-25T19-32-00/
-        meta.json  {id, startedAt, endedAt, durationSec, sessionCertFP}
-```
-
-Directories are mode `0700`, files `0600`. **No encryption at rest in v1**
-— relies on the host OS's user-level file permissions. The practitioner
-is responsible for retention, consent, and compliance with their
-jurisdiction; nothing about this feature is synced or transmitted
-off-device.
-
-### Manager mirror
-
-In Session view, the **Mirror** card renders a live preview of the
-client's ball — same pattern, same direction, same gaze positions —
-so the practitioner can see what the client sees without looking at the
-client's screen. Updates from the `state` frames the client already
-sends on transport events; the mirror's local rAF extrapolates the
-cycle fraction in between for a smooth canvas.
-
-The card is resizable: drag its lower-right corner to scale from a
-thumbnail to a focal view. Size persists per machine via
-`localStorage`.
-
-Multi-session note: today the mirror targets the first connected
-session that has reported state. A per-session focus picker is a
-follow-on once multi-session usage surfaces it.
-
-### Voice call
-
-Either side can place a voice call across an active session. The
-**📞 Start call** button on the Session-view Audio card (manager) and
-the 📞 in the client overlay (client) start the call; the other side
-sees an Accept / Decline prompt. Once accepted, audio flows direct
-browser↔browser over
-DTLS-SRTP (UDP) — the Go process relays only the SDP / ICE signaling
-verbs (`audio-offer` / `audio-answer` / `audio-ice` / `audio-bye`) over
-the existing mTLS WebSocket.
-
-The Session-view Audio card shows the active call's state pill, mic-mute,
-speaker volume slider, and an End-call button. Mic mute is local-only — the
-muted user can still hear the peer. Speaker volume + mute are local.
-Hanging up sends `audio-bye` and tears the peer connection down on
-both sides.
-
-No STUN or TURN servers are contacted — keeping the "no telemetry, no
-phone-home" rule intact. The manager's address is already public (it's
-in the session URL), so ICE works in friendly NAT environments via
-host + peer-reflexive candidates. Restrictive symmetric NATs may need
-additional firewall work; this is a known limit.
-
-Headphones are recommended on both sides. Browsers do echo cancellation
-on the microphone path, but a speaker that's audible to the mic can
-still cause feedback that AEC won't fully suppress.
-
-### File sharing
-
-Either side can send a file across an active session. Ways to start a
-send:
-
-- **📎** in the client-mode overlay (client) opens a native file picker.
-- **Drag-and-drop** a file onto the Session-view **Files** card
-  (manager) or the client-side overlay — the host highlights while you
-  drag and the send starts on drop.
-- **Files card** on the Session view: choose a file, click **Send**.
-  It targets the connected client (no picker); the button is disabled
-  until a client is connected and a file is chosen.
-
-The sender sees a progress card with a chunks-done / chunks-total bar
-that ticks through the transfer; the receiver's `file-accept` flips it
-to "Accepted, sending…" before chunks start landing, and the card
-auto-dismisses 3 s after "Sent." On the receiver, an inline
-notification shows filename + size and offers **Save** (browser
-download), **Open** (new tab), or **Dismiss**.
-
-Storage depends on whether the session is bound to a client:
-
-- **Bound session** — the file is persisted under the client's record
-  at `<user-config>/zoetrope/clients/<slug>/inbox/<eid>/{meta.json, blob}`
-  and stays there across session removal and binary restarts. The
-  Session-view Files card lists every received file for the connected
-  client with Open + Dismiss; Save / Open from the inline notification fetch the same
-  bytes. **Retention is the practitioner's responsibility** — zoetrope
-  applies no quota, FIFO eviction, or automatic expiration; entries
-  sit on disk until the practitioner dismisses them. Same framing as
-  the rest of client records: you own retention, consent, and
-  jurisdictional compliance.
-- **Unbound session** — the bytes live in memory only and are dropped
-  five minutes after arrival if the user hasn't fetched them. Save or
-  Open consumes the in-memory entry.
-
-Size is capped per machine via **Max transfer size (MiB)** in the
-editor (default 16 MiB). The cap is sticky on the receiver — a
-manager-pushed config does not override the client's local value, so
-the client controls what they will accept. Set the cap to `0` to
-disable file transfer on this machine.
-
-Any file type is accepted: no extension allowlist, no MIME sniffing.
-The browser handles received bytes through Blob URLs, so executables
-arrive as inert downloads — they are not run.
-
-### Limitations to be aware of
-
-- A manager-binary crash invalidates active sessions; clients see a
-  connection error and must re-paste a fresh URL.
-- Per-device practitioner identity — switching machines makes the
-  practitioner look new to clients. Move `practitioner_identity.pem`
-  manually if you want continuity.
-- The animation viewport renders whatever the **client's** local config
-  declares (background, ball size, palette). The manager drives playback,
-  not appearance.
 
 ## Build & versioning
 
@@ -422,18 +189,13 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 
 ```
 .
-├── main.go         entry point, listener, signal handling
+├── main.go         entry point, listener, idle-shutdown, signal handling
 ├── config.go       JSON load/save, defaults, atomic writes
 ├── server.go       HTTP routes, embedded asset serving
 ├── browser.go      cross-platform default-browser open
-├── crypto.go       practitioner + per-session identities
-├── link.go         WS transport, mTLS pinning, frame I/O
-├── mode.go         standalone / manager / client transitions + sessions
-├── transfer.go     file-transfer protocol (chunking, inbox, caps)
-├── clients.go      client + session records (on-disk schema, atomic writes)
-├── bridge.go       SSE bus between Go and browser tabs
 ├── web/            embedded UI (HTML/CSS/JS)
-│   ├── patterns.js SoT for the animation kinematics (client + manager mirror)
-│   └── audio.js    SoT for the in-browser WebRTC voice-call state machine
+│   ├── app.js      rAF animation loop, transport, editor wiring
+│   ├── patterns.js SoT for the animation kinematics
+│   └── editor.js   config editor sidebar (playlists, items, globals)
 └── build/          cross-compile script, Info.plist, .desktop entry, lipo helper
 ```

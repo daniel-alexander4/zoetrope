@@ -3,7 +3,7 @@
 
   const TAU = Math.PI * 2;
 
-  // PATTERN_LABELS lives on window.zoetropeEditor (shared with /manage).
+  // PATTERN_LABELS lives on window.zoetropeEditor.
   const PATTERN_LABELS = window.zoetropeEditor.PATTERN_LABELS;
 
   const state = {
@@ -17,13 +17,6 @@
     bounceStart: { x: 0, y: 0 },
     dirty: false,
     field: { t: 0, introT: 0, loopT: 0 },
-    loopback: false, // /?loopback dev mode pins this tab to client view
-    // Client-side safety pause: when true, dispatch ignores transport
-    // verbs from the manager so the ball stays frozen until the client
-    // explicitly resumes. managerPlayIntent tracks the manager's last
-    // wish so Resume restores it.
-    clientPaused: false,
-    managerPlayIntent: true,
   };
 
   // ---- Field palettes ---------------------------------------------------
@@ -64,10 +57,9 @@
   }
 
   // ---- Patterns ---------------------------------------------------------
-  // The pattern engine itself lives in web/patterns.js so the manager
-  // mirror (web/manage.js) can call into the same kinematics with its
-  // own canvas. Pull the bits this module needs into local names so the
-  // animation loop below reads the same as before.
+  // The pattern engine itself lives in web/patterns.js (single source of
+  // truth for kinematics). Pull the bits this module needs into local
+  // names so the animation loop below reads cleanly.
   const {
     patterns,
     GAZE_POSITIONS,
@@ -115,11 +107,9 @@
         const atLastItem = state.itemIdx + 1 >= pl.items.length;
         if (atLastItem && pl.loop === false) {
           // Non-looping playlist finished: rewind to the first item's
-          // start and stop. Pausing here propagates to the manager mirror
-          // via the state push; Dan re-engages play to run it again.
+          // start and stop. Re-engage play to run it again.
           enterItem(0);
           pause();
-          schedulePushClientState();
           return;
         }
         enterItem((state.itemIdx + 1) % pl.items.length);
@@ -443,34 +433,6 @@
     enterItem(i);
   }
 
-  // ---- Position-sequence step controls (IEMT manual override) ---------
-  // The position-sequence engine derives the current step from
-  // floor(state.t * steps.length). Snapping to a step boundary parks the
-  // ball at that position's dwell — used by "hold" (pause + snap) and by
-  // the step-level prev/next controls the manager UI sends as
-  // advance-position / back-position verbs.
-
-  function snapToCurrentStep() {
-    const item = currentItem();
-    if (!item || !isSequencePattern(item.pattern)) return;
-    const total = (item.steps || []).length;
-    if (total === 0) return;
-    const idx = Math.floor(state.t * total) % total;
-    state.t = idx / total;
-    state.lastFrameMs = 0;
-  }
-
-  function stepByPositions(delta) {
-    const item = currentItem();
-    if (!item || !isSequencePattern(item.pattern)) return;
-    const total = (item.steps || []).length;
-    if (total === 0) return;
-    const cur = Math.floor(state.t * total) % total;
-    const next = ((cur + delta) % total + total) % total;
-    state.t = next / total;
-    state.lastFrameMs = 0;
-  }
-
   function setPlayIcon(icon) {
     document.getElementById('btn-play').textContent = icon;
   }
@@ -489,100 +451,23 @@
   }
 
   // ---- Dispatch ---------------------------------------------------------
-  // Single entry point for transport actions. Local UI handlers and (when
-  // present) inbound network verbs both route through here, so standalone
-  // and client modes share one mutation path.
+  // Single entry point for transport actions. Local UI handlers (buttons,
+  // keyboard, editor jump) route through here.
 
   function dispatch(verb) {
-    // Track the manager's last play/pause intent before any client-pause
-    // gating, so Resume on the client side restores what the manager
-    // most-recently wanted instead of stale state. Navigation verbs
-    // (advance/back/jump/reset) don't change play intent.
     switch (verb.type) {
-      case 'play':
-      case 'resume':
-      case 'release':
-        state.managerPlayIntent = true;
-        break;
-      case 'pause':
-      case 'stop':
-      case 'hold':
-        state.managerPlayIntent = false;
-        break;
-      case 'toggle':
-        state.managerPlayIntent = !state.managerPlayIntent;
-        break;
-    }
-    // While the client has self-paused, drop all transport verbs so the
-    // manager can't override the client's clinical "I need a moment."
-    // Config / file / audio / capture verbs still apply — they aren't
-    // transport, and the practitioner often needs voice during a pause.
-    if (state.clientPaused) {
-      switch (verb.type) {
-        case 'play': case 'pause': case 'resume': case 'toggle':
-        case 'advance': case 'back': case 'reset': case 'stop':
-        case 'hold': case 'release':
-        case 'advance-position': case 'back-position':
-        case 'jump': case 'set-sequence':
-        case 'set-speed':
-          return; // queued in managerPlayIntent / dropped
-      }
-    }
-    switch (verb.type) {
-      case 'play':         play(); break;
-      case 'pause':        pause(); break;
-      case 'resume':       play(); break;
-      case 'toggle':       togglePlay(); break;
-      case 'advance':      nextPattern(); break;
-      case 'back':         seekPatternStart(); break;
-      case 'reset':        seekPlaylistStart(); break;
-      case 'stop':         pause(); seekPlaylistStart(); break;
-      case 'hold':            pause(); snapToCurrentStep(); break;
-      case 'release':         play(); break;
-      case 'advance-position': stepByPositions(+1); break;
-      case 'back-position':    stepByPositions(-1); break;
+      case 'play':    play(); break;
+      case 'pause':   pause(); break;
+      case 'toggle':  togglePlay(); break;
+      case 'advance': nextPattern(); break;
+      case 'back':    seekPatternStart(); break;
+      case 'reset':   seekPlaylistStart(); break;
       case 'jump':
-      case 'set-sequence':
         if (Number.isInteger(verb.index)) jumpToItem(verb.index);
-        break;
-      case 'set-speed': {
-        // Practitioner-dialed runtime tempo. Honors the same 0-4× shape
-        // as the standalone speed-select; advance() multiplies into
-        // userSpeed/2 so the cycle scales smoothly.
-        const m = Number(verb.mul);
-        if (Number.isFinite(m) && m > 0) state.speedMul = m;
-        break;
-      }
-      case 'set-config':
-        if (verb.config) applyPushedConfig(verb.config);
-        break;
-      case 'capture-request':
-        showCaptureConsent();
-        break;
-      case 'capture-state':
-        setRecPillVisible(!!verb.recording);
         break;
       default:
         console.warn('unknown verb:', verb);
     }
-    // In client mode, push the resulting state back so the manager UI
-    // reflects what the ball is actually doing.
-    if (state.nmode === 'client') schedulePushClientState();
-  }
-
-  // Apply a config pushed by the manager on session-connect. Back up
-  // the local config on first push so we can restore on session end;
-  // delegate the editor-side re-render to the editor module.
-  function applyPushedConfig(cfg) {
-    if (state.sessionConfigBackup == null) {
-      state.sessionConfigBackup = JSON.parse(JSON.stringify(state.config));
-    }
-    // maxTransferBytes is sticky on the receiver: the practitioner doesn't
-    // dictate what files the client will accept. Preserve the local value
-    // so the editor + Go-side caps stay in sync with config.json on disk.
-    cfg.maxTransferBytes = state.config.maxTransferBytes;
-    window.zoetropeEditor.applyConfig(cfg);
-    enterItem(0);
   }
 
   // ---- Wiring -----------------------------------------------------------
@@ -632,7 +517,7 @@
       clearTimeout(closeTimer);
     });
   }
-  // Editor wiring lives in editor.js (shared with /manage). Initialize
+  // Editor wiring lives in editor.js. Initialize
   // it with hooks back into the animation engine — jumping to a
   // playlist item, resetting field render state, closing the drawer
   // after save.
@@ -702,439 +587,6 @@
     .then(v => { document.getElementById('version').textContent = v.trim(); })
     .catch(() => {});
 
-  // ---- Network mode (standalone / client) -----------------------------
-  //
-  // The ball page handles standalone and client modes. Hosting lives on
-  // /manage; the Hosting pill here is purely a nav affordance.
-
-  state.nmode = 'standalone';
-  let clientStatePushTimer = null;
-
-  const PILL_TO_MODE = { standalone: 'standalone', client: 'client', hosting: 'manager' };
-
-  async function csrfFetch(path, options = {}) {
-    const headers = { ...(options.headers || {}), 'X-Zoetrope': '1' };
-    return fetch(path, { ...options, headers });
-  }
-
-  function applyNetworkMode(snap) {
-    // Loopback pins the UI to client view; ignore subsequent mode-change
-    // events which would otherwise flip the page back to whatever the
-    // backend reports (manager mode, in the loopback case).
-    if (state.loopback) return;
-    const prev = state.nmode;
-    state.nmode = snap.mode || 'standalone';
-    document.body.classList.remove('nmode-standalone', 'nmode-manager', 'nmode-client');
-    document.body.classList.add('nmode-' + state.nmode);
-
-    document.querySelectorAll('.mpill').forEach(p => {
-      p.classList.toggle('active', PILL_TO_MODE[p.dataset.mode] === state.nmode);
-    });
-
-    if (state.nmode === 'client') {
-      setClientPill('connected');
-      pushClientHello();
-      pushClientSequences();
-      pushClientState();
-    }
-
-    // Leaving client mode: restore the local config the manager
-    // replaced via set-config, if any. Never write to /api/config —
-    // the backup is in-memory and the persisted config was never
-    // touched.
-    if (prev === 'client' && state.nmode !== 'client' && state.sessionConfigBackup) {
-      window.zoetropeEditor.applyConfig(state.sessionConfigBackup);
-      enterItem(0);
-      state.sessionConfigBackup = null;
-    }
-    // Leaving client mode → hang up any in-flight call so we don't keep
-    // the mic open or leak a live peer connection.
-    if (prev === 'client' && state.nmode !== 'client'
-        && window.zoetropeAudio && window.zoetropeAudio.getState().state !== 'idle') {
-      window.zoetropeAudio.hangup();
-    }
-  }
-
-  function setClientPill(status) {
-    const pill = document.getElementById('client-pill');
-    pill.dataset.state = status;
-    pill.textContent = ({
-      connected: 'Connected',
-      connecting: 'Connecting…',
-      reconnecting: 'Reconnecting…',
-      disconnected: 'Disconnected',
-      error: 'Connection error',
-    }[status]) || status;
-  }
-
-  // ---- Client-side pushes ---------------------------------------------
-
-  function schedulePushClientState() {
-    if (state.nmode !== 'client') return;
-    if (clientStatePushTimer) clearTimeout(clientStatePushTimer);
-    clientStatePushTimer = setTimeout(pushClientState, 100);
-  }
-
-  function pushClientHello() {
-    return csrfFetch('/api/network/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'hello' }),
-    }).catch(()=>{});
-  }
-
-  function pushClientSequences() {
-    const seqs = (currentPlaylist()?.items || []).map((item, idx) => ({
-      index: idx,
-      pattern: item.pattern,
-      label: item.name || PATTERN_LABELS[item.pattern] || item.pattern,
-    }));
-    return csrfFetch('/api/network/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'sequences', sequences: seqs }),
-    }).catch(()=>{});
-  }
-
-  function pushClientState() {
-    const item = currentItem();
-    const isSeq = item && isSequencePattern(item.pattern);
-    const stepCount = isSeq ? (item.steps || []).length : null;
-    const stepIdx = isSeq && stepCount > 0
-      ? Math.floor(state.t * stepCount) % stepCount
-      : null;
-    return csrfFetch('/api/network/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'state',
-        playing: state.playing,
-        item_idx: state.itemIdx,
-        repeat_idx: state.repeatIdx,
-        pattern: item?.pattern || null,
-        step_idx: stepIdx,
-        step_count: stepCount,
-        // Cycle fraction at the moment of capture. Manager's mirror uses
-        // this + receipt-wallclock to extrapolate forward between state
-        // events, so the canvas stays smooth even without a state push
-        // every frame.
-        t: state.t,
-        // Client-side safety pause: while true, the practitioner-side
-        // session card surfaces "🛑 client paused" and the practitioner
-        // knows their transport verbs are queued, not applied.
-        client_paused: state.clientPaused,
-      }),
-    }).catch(()=>{});
-  }
-
-  // ---- Mode actions ---------------------------------------------------
-
-  async function networkJoin(url, label) {
-    const r = await csrfFetch('/api/mode/join', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, label: label || '' }),
-    });
-    if (!r.ok) throw new Error((await r.text()).trim() || 'join failed');
-  }
-
-  async function networkStandalone() {
-    await csrfFetch('/api/mode/standalone', { method: 'POST' }).catch(()=>{});
-  }
-
-  // ---- Join dialog ----------------------------------------------------
-
-  const joinDialog = document.getElementById('join-dialog');
-  function openJoinDialog() {
-    joinDialog.classList.add('open');
-    document.getElementById('join-error').textContent = '';
-    document.getElementById('join-url').focus();
-  }
-  document.getElementById('join-cancel').addEventListener('click', () => {
-    joinDialog.classList.remove('open');
-  });
-  document.getElementById('join-confirm').addEventListener('click', async () => {
-    const url = document.getElementById('join-url').value.trim();
-    const errEl = document.getElementById('join-error');
-    if (!url) { errEl.textContent = 'Connection URL is required'; return; }
-    setClientPill('connecting');
-    try {
-      await networkJoin(url);
-      joinDialog.classList.remove('open');
-    } catch (err) {
-      setClientPill('error');
-      errEl.textContent = err.message || String(err);
-    }
-  });
-
-  document.getElementById('btn-leave').addEventListener('click', networkStandalone);
-
-  // ---- Client-side safety pause ---------------------------------------
-  // While clientPaused, dispatch ignores manager transport verbs (see
-  // dispatch()'s gate). Resume restores the manager's last play intent.
-  const btnClientPause = document.getElementById('btn-client-pause');
-  function refreshClientPauseButton() {
-    if (state.clientPaused) {
-      btnClientPause.textContent = '▶ Resume';
-      btnClientPause.classList.add('active');
-    } else {
-      btnClientPause.textContent = '⏸ Pause';
-      btnClientPause.classList.remove('active');
-    }
-  }
-  refreshClientPauseButton();
-  btnClientPause.addEventListener('click', () => {
-    state.clientPaused = !state.clientPaused;
-    if (state.clientPaused) {
-      state.playing = false;
-    } else {
-      // Resume to the manager's last intended state. If they wanted Play,
-      // we start playing; if Pause, we stay paused and they can hit Play
-      // again to set us in motion.
-      state.playing = !!state.managerPlayIntent;
-    }
-    refreshClientPauseButton();
-    schedulePushClientState();
-  });
-
-  // ---- File transfer (client → manager) -------------------------------
-  async function sendClientFile(file) {
-    try {
-      const res = await window.zoetropeTransfer.sendFile('/api/network/transfer', file);
-      if (res && res.transfer_id) {
-        const host = document.getElementById('client-inbox');
-        window.zoetropeTransfer.beginOutbound(host, {
-          id: res.transfer_id,
-          name: res.name || file.name,
-          sizeBytes: res.size_bytes ?? file.size,
-        });
-      }
-    } catch (err) {
-      console.warn('send failed:', err);
-      alert('Send failed: ' + err.message);
-    }
-  }
-  document.getElementById('btn-client-attach').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    try {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.style.display = 'none';
-      input.addEventListener('change', async () => {
-        const file = input.files && input.files[0];
-        input.remove();
-        if (file) await sendClientFile(file);
-      }, { once: true });
-      document.body.appendChild(input);
-      input.click();
-    } finally {
-      btn.disabled = false;
-    }
-  });
-  // Drag-and-drop sender on the client-side overlay so a file dropped
-  // anywhere in #client-status (URL row + Leave button + inbox area) goes
-  // to the manager. Scoped to that element to avoid hijacking drops
-  // anywhere else on the canvas.
-  const clientStatus = document.getElementById('client-status');
-  if (clientStatus) window.zoetropeTransfer.attachDropTarget(clientStatus, sendClientFile);
-
-  // ---- Session capture (client side) --------------------------------
-  //
-  // Two flows live on this side:
-  //   1. Practitioner-initiated record: SSE delivers a `capture-request`
-  //      verb → show consent prompt → reply with `capture-response`.
-  //      When the host begins recording, `capture-state{recording:true}`
-  //      lights up a persistent REC pill with a "Revoke" link.
-  //   2. Client-initiated local record: 🎙 button on the overlay starts
-  //      a MediaRecorder over the same call streams the practitioner
-  //      could record; the resulting Blob downloads to the client's
-  //      Downloads folder. No protocol traffic — the host doesn't see
-  //      this happening.
-
-  function showCaptureConsent() {
-    const el = document.getElementById('capture-consent');
-    if (el) el.hidden = false;
-  }
-  function hideCaptureConsent() {
-    const el = document.getElementById('capture-consent');
-    if (el) el.hidden = true;
-  }
-
-  function setRecPillVisible(on) {
-    const pill = document.getElementById('client-rec-pill');
-    if (pill) pill.hidden = !on;
-  }
-
-  function sendNetworkVerb(payload) {
-    return csrfFetch('/api/network/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch(() => {});
-  }
-
-  document.getElementById('capture-consent-allow').addEventListener('click', () => {
-    hideCaptureConsent();
-    sendNetworkVerb({ type: 'capture-response', allowed: true });
-  });
-  document.getElementById('capture-consent-deny').addEventListener('click', () => {
-    hideCaptureConsent();
-    sendNetworkVerb({ type: 'capture-response', allowed: false });
-  });
-  document.getElementById('client-rec-revoke').addEventListener('click', (e) => {
-    e.preventDefault();
-    sendNetworkVerb({ type: 'capture-revoke' });
-    setRecPillVisible(false);
-  });
-
-  // Local-only client capture: records the same mixed call audio via
-  // capture.js, then triggers a browser download. No server, no peer
-  // notification — the host doesn't know this happened.
-  let clientRecorder = null;
-  document.getElementById('btn-client-record').addEventListener('click', () => {
-    try {
-      clientRecorder = window.zoetropeCapture.start();
-      document.getElementById('btn-client-record').hidden = true;
-      document.getElementById('btn-client-record-stop').hidden = false;
-    } catch (err) {
-      alert(err.message || String(err));
-    }
-  });
-  document.getElementById('btn-client-record-stop').addEventListener('click', async () => {
-    if (!clientRecorder) return;
-    const blob = await clientRecorder.stop();
-    clientRecorder = null;
-    window.zoetropeCapture.downloadBlob(blob, window.zoetropeCapture.captureFilename());
-    document.getElementById('btn-client-record').hidden = false;
-    document.getElementById('btn-client-record-stop').hidden = true;
-  });
-
-  // ---- Voice call (bidirectional) -------------------------------------
-  //
-  // audio.js owns the RTCPeerConnection lifecycle. We give it a sendVerb
-  // that posts to /api/network/send (manager is the only peer in client
-  // mode, so peerFP is ignored) and a state-change callback that renders
-  // the controls block under #client-status.
-  window.zoetropeAudio.init({
-    sendVerb: (verb /*, peerFP — unused, manager is the only peer */) => {
-      csrfFetch('/api/network/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(verb),
-      }).catch(err => console.warn('audio send:', err));
-    },
-    onStateChange: renderClientAudio,
-  });
-
-  function renderClientAudio(snap) {
-    const wrap = document.getElementById('client-audio');
-    const incoming = document.getElementById('client-audio-incoming');
-    const active = document.getElementById('client-audio-active');
-    const stateEl = document.getElementById('client-audio-state');
-    const micBtn = document.getElementById('client-audio-mic');
-    const vol = document.getElementById('client-audio-volume');
-    wrap.hidden = (snap.state === 'idle');
-    incoming.hidden = (snap.state !== 'incoming-ringing');
-    active.hidden = !(snap.state === 'outgoing-ringing' || snap.state === 'connecting' || snap.state === 'connected');
-    if (!active.hidden) {
-      stateEl.textContent = ({
-        'outgoing-ringing': 'Calling…',
-        'connecting':       'Connecting…',
-        'connected':        'Connected',
-      }[snap.state]) || snap.state;
-      micBtn.textContent = snap.micMuted ? '🎤 Muted' : '🎤 Mute';
-      micBtn.classList.toggle('active', snap.micMuted);
-      vol.value = Math.round(snap.speakerVolume * 100);
-    }
-    // The 🎙 Record button is meaningful only while a call is active.
-    // Stop button stays hidden until a recording is in flight; the
-    // record-click handler swaps the visibility itself.
-    const recBtn = document.getElementById('btn-client-record');
-    const recStop = document.getElementById('btn-client-record-stop');
-    const callConnected = (snap.state === 'connected');
-    if (recBtn) {
-      recBtn.hidden = !callConnected || !recStop.hidden;
-    }
-    if (!callConnected && recStop && !recStop.hidden) {
-      // Call dropped mid-recording — close the recorder and let the
-      // resulting blob still download so the user doesn't lose work.
-      if (clientRecorder) {
-        clientRecorder.stop().then(blob => {
-          window.zoetropeCapture.downloadBlob(blob, window.zoetropeCapture.captureFilename());
-          clientRecorder = null;
-        });
-      }
-      recStop.hidden = true;
-    }
-  }
-  renderClientAudio(window.zoetropeAudio.getState());
-
-  document.getElementById('btn-client-call').addEventListener('click', async () => {
-    const cur = window.zoetropeAudio.getState();
-    if (cur.state !== 'idle') return; // ignore double-clicks
-    try {
-      await window.zoetropeAudio.startCall(null, 'practitioner');
-    } catch (err) {
-      console.warn('call failed:', err);
-      alert('Call failed: ' + err.message);
-    }
-  });
-  document.getElementById('client-audio-accept').addEventListener('click', () => window.zoetropeAudio.acceptCall());
-  document.getElementById('client-audio-decline').addEventListener('click', () => window.zoetropeAudio.declineCall());
-  document.getElementById('client-audio-hangup').addEventListener('click', () => window.zoetropeAudio.hangup());
-  document.getElementById('client-audio-mic').addEventListener('click', () => {
-    const cur = window.zoetropeAudio.getState();
-    window.zoetropeAudio.setMicMuted(!cur.micMuted);
-  });
-  document.getElementById('client-audio-volume').addEventListener('input', e => {
-    window.zoetropeAudio.setSpeakerVolume((+e.target.value) / 100);
-  });
-
-  // ---- Pill clicks ----------------------------------------------------
-
-  document.querySelectorAll('.mpill').forEach(p => {
-    p.addEventListener('click', () => onPillClick(p));
-  });
-
-  function onPillClick(p) {
-    const target = PILL_TO_MODE[p.dataset.mode];
-    if (target === state.nmode) {
-      // Active pill — already in this mode. Hosting pill is an exception
-      // since hosting lives on /manage; clicking it navigates there.
-      if (target === 'manager') window.location.href = '/manage';
-      return;
-    }
-    if (target === 'standalone') {
-      if (state.nmode === 'manager') {
-        confirmAction('Stop hosting? Any connected clients will be disconnected.', networkStandalone);
-      } else {
-        networkStandalone();
-      }
-      return;
-    }
-    if (target === 'client') {
-      if (state.nmode === 'manager') {
-        confirmAction('Stop hosting and switch to client mode?', () => {
-          networkStandalone().then(openJoinDialog);
-        });
-      } else {
-        openJoinDialog();
-      }
-      return;
-    }
-    if (target === 'manager') {
-      // Navigate to /manage. If currently a client, confirm first.
-      if (state.nmode === 'client') {
-        confirmAction('Leave the current session and start hosting?', () => {
-          networkStandalone().then(() => { window.location.href = '/manage'; });
-        });
-      } else {
-        window.location.href = '/manage';
-      }
-    }
-  }
-
   // ---- Confirm overlay -----------------------------------------------
 
   let pendingConfirm = null;
@@ -1160,103 +612,12 @@
       cancelSelector: '#confirm-cancel',
       initialSelector: '#confirm-ok',
     });
-    window.installModalA11y(document.getElementById('join-dialog'), {
-      cancelSelector: '#join-cancel',
-      initialSelector: '#join-url',
-    });
-    window.installModalA11y(document.getElementById('capture-consent'), {
-      cancelSelector: '#capture-consent-deny',
-      initialSelector: '#capture-consent-allow',
-    });
-  }
-
-  // ---- SSE subscriber -------------------------------------------------
-
-  function startEventSource() {
-    const es = new EventSource('/api/session/events');
-    es.addEventListener('mode-change', e => {
-      try { applyNetworkMode(JSON.parse(e.data)); } catch (err) { console.error(err); }
-    });
-    es.addEventListener('network-verb', e => {
-      try {
-        const ev = JSON.parse(e.data);
-        if (!ev.frame) return;
-        // Audio signaling is owned by audio.js — don't run it through the
-        // transport dispatch (which would log "unknown verb").
-        if (ev.frame.type === 'audio-offer' || ev.frame.type === 'audio-answer'
-            || ev.frame.type === 'audio-ice' || ev.frame.type === 'audio-bye') {
-          window.zoetropeAudio.handleSignal(ev.frame, null, 'practitioner');
-          return;
-        }
-        dispatch(ev.frame);
-      } catch (err) { console.error(err); }
-    });
-    es.addEventListener('network-disconnected', () => {
-      if (state.nmode === 'client') setClientPill('disconnected');
-    });
-    es.addEventListener('file-received', e => {
-      try {
-        const ev = JSON.parse(e.data);
-        // / surfaces files received from the manager. session→manager
-        // arrivals are handled on /manage.
-        if (ev.direction !== 'from-manager') return;
-        const host = document.getElementById('client-inbox');
-        window.zoetropeTransfer.renderInboundNotification(host, ev);
-      } catch (err) { console.error(err); }
-    });
-    // Sender-side lifecycle for client → manager uploads. Routed through
-    // zoetropeTransfer so the matching outbound progress card updates.
-    for (const kind of ['progress', 'accepted', 'completed', 'failed']) {
-      es.addEventListener('transfer-' + kind, e => {
-        try { window.zoetropeTransfer.handleLifecycle(kind, JSON.parse(e.data)); }
-        catch (err) { console.error(err); }
-      });
-    }
-  }
-
-  async function initNetworkMode() {
-    // Dev-only loopback: when /?loopback is set, the backend is in
-    // manager mode with a synthetic in-process session and this tab
-    // plays the client role for testing. Skip /api/mode/state (its
-    // snap.mode would say "manager" and pull the UI the wrong way) and
-    // pin the client UI directly. SSE network-verb events still fire
-    // because Loopback() publishes them on the same bus this tab
-    // subscribes to.
-    if (new URLSearchParams(window.location.search).has('loopback')) {
-      state.loopback = true;
-      state.nmode = 'client';
-      document.body.classList.remove('nmode-standalone', 'nmode-manager', 'nmode-client');
-      document.body.classList.add('nmode-client');
-      const pill = document.getElementById('client-pill');
-      pill.dataset.state = 'loopback';
-      pill.textContent = 'LOOPBACK (dev)';
-      pushClientHello();
-      pushClientSequences();
-      pushClientState();
-      startEventSource();
-      return;
-    }
-    try {
-      const r = await fetch('/api/mode/state', { cache: 'no-store' });
-      if (r.ok) applyNetworkMode(await r.json());
-    } catch (err) {
-      console.warn('initial mode load failed:', err);
-    }
-    startEventSource();
-    // The /manage page sends users here with #join to open the join
-    // dialog. Honor it once, then clear the hash so a refresh doesn't
-    // re-open the dialog.
-    if (window.location.hash === '#join') {
-      history.replaceState(null, '', window.location.pathname);
-      openJoinDialog();
-    }
   }
 
   window.zoetropeEditor.loadConfig().then(() => {
     heartbeat();
     play();
     requestAnimationFrame(frame);
-    initNetworkMode();
   }).catch(err => {
     console.error(err);
     document.body.innerText = 'Failed to load config: ' + err.message;

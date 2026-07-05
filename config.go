@@ -18,7 +18,6 @@ type Config struct {
 	LingerSec          float64         `json:"lingerSec"`          // dwell at each extreme of a linear sweep; 0 = off
 	LingerLeadFrac     float64         `json:"lingerLeadFrac"`     // how far the size pulse leads into adjacent motion, as a fraction of min(L, half); 0 = pulse confined to dwell
 	ShowPositionLabels bool            `json:"showPositionLabels"` // when on, position-sequence patterns draw small labels at each gaze grid point
-	MaxTransferBytes   int64           `json:"maxTransferBytes"`   // cap on file-transfer sends/receives on this machine (bytes). Sticky on the receiver — manager-pushed configs do not override the client's local value.
 	Field              FieldConfig     `json:"field"`
 	Playlists          []NamedPlaylist `json:"playlists"`
 	ActivePlaylist     string          `json:"activePlaylist"` // name of the playlist the engine plays; falls back to playlists[0] when missing
@@ -72,7 +71,6 @@ func defaultConfig() Config {
 		BallSize:         80,
 		Speed:            2,
 		LingerLeadFrac:   0.35,
-		MaxTransferBytes: 16 * 1024 * 1024,
 		Field: FieldConfig{
 			Speed:            2,
 			Palette:          "Happy",
