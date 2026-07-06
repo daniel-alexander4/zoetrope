@@ -179,13 +179,14 @@ Requires Go 1.25+, `zip`, and (for the Debian package) `dpkg-deb`.
 
 The version string lives in the top-level `VERSION` file (e.g. `0.1.0`,
 no leading `v`). It's `//go:embed`-ed into the binary (`main.go`), so the
-running app reports it at startup and on `GET /version`. `build/build.sh`
+running app reports it at startup and on `GET /version`. `build.sh`
 reads the same file to name the artifacts and stamp the macOS `Info.plist`
 and the `.deb` control file — one source, no overrides.
 
 ```sh
-go run .          # reports the VERSION file's value
-./build/build.sh  # builds every artifact from the same file
+go run .      # run locally; reports the VERSION file's value
+./build.sh    # cross-compile every artifact into dist/
+./install.sh  # build (if needed) + install the .deb on this machine (Linux)
 ```
 
 To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
@@ -195,12 +196,15 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 ```
 .
 ├── main.go         entry point, listener, idle-shutdown, signal handling
-├── config.go       JSON load/save, defaults, atomic writes
+├── config.go       JSON load/save, defaults, atomic writes, builtin reconcile
 ├── server.go       HTTP routes, embedded asset serving
+├── update.go       opt-in GitHub update check (GET /update/check)
 ├── browser.go      app-mode window launch, with default-browser tab fallback
+├── build.sh        cross-compile every artifact into dist/
+├── install.sh      build + install the .deb on this machine (Linux)
 ├── web/            embedded UI (HTML/CSS/JS)
 │   ├── app.js      rAF animation loop, transport, editor wiring
 │   ├── patterns.js SoT for the animation kinematics
 │   └── editor.js   config editor sidebar (playlists, items, globals)
-└── build/          cross-compile script, Info.plist, .desktop entry, lipo helper
+└── build/          Info.plist, .desktop entry, lipo + icon helpers
 ```

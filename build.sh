@@ -2,7 +2,7 @@
 # Build Zoetrope artifacts for Linux (.deb, bare binary), Windows (.exe),
 # and macOS (.app universal, zipped).
 #
-# Usage: ./build/build.sh
+# Usage: ./build.sh
 # Output goes to dist/. Filenames embed the version, e.g.
 #   Zoetrope-0.1.0-linux-amd64.deb
 #   Zoetrope-0.1.0-windows-amd64.exe
@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 # The VERSION file is the single source of truth: it's //go:embed-ed into
