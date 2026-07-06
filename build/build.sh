@@ -2,7 +2,7 @@
 # Build Zoetrope artifacts for Linux (.deb, bare binary), Windows (.exe),
 # and macOS (.app universal, zipped).
 #
-# Usage: ./build/build.sh [version]
+# Usage: ./build/build.sh
 # Output goes to dist/. Filenames embed the version, e.g.
 #   Zoetrope-0.1.0-linux-amd64.deb
 #   Zoetrope-0.1.0-windows-amd64.exe
@@ -14,8 +14,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION_FROM_FILE=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || true)
-VERSION="${1:-${VERSION:-${VERSION_FROM_FILE:-0.0.0}}}"
+# The VERSION file is the single source of truth: it's //go:embed-ed into
+# the binary (main.go), so the artifact filenames, Info.plist, and .deb
+# control stamped below all read from the same file the binary reports.
+VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || true)
+if [ -z "$VERSION" ]; then
+  echo "error: VERSION file is missing or empty" >&2
+  exit 1
+fi
 DIST="dist"
 APP="zoetrope"
 DISPLAY_NAME="Zoetrope"

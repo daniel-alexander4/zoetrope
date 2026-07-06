@@ -200,9 +200,16 @@
 
   let cachedRandomSeed = null;
   let cachedRandomResolved = null;
+  // Reused across frames for the fixed (non-random) shapes so the hot field
+  // loop doesn't allocate a descriptor every frame; params stays {} (the
+  // renderer reads only random-shape params, all via ?? fallbacks).
+  const fixedShapeResolved = { shape: 'circles', params: {} };
   function resolveShape() {
     const shape = state.config.field?.shape || 'circles';
-    if (shape !== 'random') return { shape, params: {} };
+    if (shape !== 'random') {
+      fixedShapeResolved.shape = shape;
+      return fixedShapeResolved;
+    }
     const seed = state.config.field?.randomSeed | 0;
     if (cachedRandomSeed === seed && cachedRandomResolved) return cachedRandomResolved;
     // "Random" generates a novel pattern from the seed by sampling parameters
@@ -244,7 +251,7 @@
 
   function advanceField(dt) {
     const f = state.config.field || {};
-    const speed = Math.max(0, f.speed ?? 3) / 10;
+    const speed = Math.max(0, f.speed ?? 2) / 10;
     state.field.t += dt * speed;
 
     if (f.loop) {
@@ -437,12 +444,26 @@
     document.getElementById('btn-play').textContent = icon;
   }
 
+  // Called every frame; only touches the DOM when the displayed values
+  // actually change. Comparing primitives (not a rebuilt key string) keeps
+  // the steady-state path allocation-free on the hot loop.
+  const nowPlaying = { i: -1, r: -1, total: -1, label: null };
   function updateNowPlaying() {
     const el = document.getElementById('now-playing');
     const item = currentItem();
-    if (!item) { el.textContent = ''; return; }
+    if (!item) {
+      if (nowPlaying.i !== null) { nowPlaying.i = null; el.textContent = ''; }
+      return;
+    }
     const total = currentPlaylist()?.items?.length || 0;
-    el.textContent = `${state.itemIdx + 1}/${total} · ${item.pattern} · rep ${state.repeatIdx + 1}/${item.repeats}`;
+    const label = item.name || PATTERN_LABELS[item.pattern] || item.pattern;
+    if (nowPlaying.i === state.itemIdx && nowPlaying.r === state.repeatIdx &&
+        nowPlaying.total === total && nowPlaying.label === label) return;
+    nowPlaying.i = state.itemIdx;
+    nowPlaying.r = state.repeatIdx;
+    nowPlaying.total = total;
+    nowPlaying.label = label;
+    el.textContent = `${state.itemIdx + 1}/${total} · ${label} · rep ${state.repeatIdx + 1}/${item.repeats}`;
   }
 
   function updatePlayingHighlight() {

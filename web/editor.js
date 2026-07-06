@@ -607,7 +607,7 @@
     setChecked('show-position-labels', !!state.config.showPositionLabels);
     applyReadOnly();
     if (state.config.field) {
-      setVal('field-speed-input', state.config.field.speed ?? 3);
+      setVal('field-speed-input', state.config.field.speed ?? 2);
       setVal('field-palette-input', state.config.field.palette || 'Happy');
       setVal('field-shape-input', state.config.field.shape || 'circles');
       setChecked('field-shuffle-input', !!state.config.field.shuffleColors);

@@ -54,19 +54,19 @@
     }
 
     // Initial state: if the overlay is already visible at install time,
-    // wire focus immediately; otherwise wait for the next show.
-    const isOpen = () => !overlay.hasAttribute('hidden') &&
-      (overlay.className.indexOf('dialog') === -1 || overlay.classList.contains('open'));
+    // wire focus immediately; otherwise wait for the next show. Registered
+    // overlays toggle visibility via the `hidden` attribute.
+    const isOpen = () => !overlay.hasAttribute('hidden');
     if (isOpen()) show();
 
     const obs = new MutationObserver(muts => {
       for (const m of muts) {
-        if (m.attributeName === 'hidden' || m.attributeName === 'class') {
+        if (m.attributeName === 'hidden') {
           if (isOpen()) show(); else hide();
         }
       }
     });
-    obs.observe(overlay, { attributes: true, attributeFilter: ['hidden', 'class'] });
+    obs.observe(overlay, { attributes: true, attributeFilter: ['hidden'] });
   }
 
   window.installModalA11y = installModal;

@@ -37,7 +37,6 @@ and shuts itself down shortly after.
   - `|<` Start of playlist
   - `<` Start of current pattern
   - Play / Pause
-  - Stop (pause + reset to playlist start)
   - `>` Next pattern
   - Speed multiplier (`0.25×` – `4×`)
   - Gear icon — toggle the editor panel
@@ -168,21 +167,14 @@ copy is a therapeutic claim.
 Requires Go 1.25+, `zip`, and (for the Debian package) `dpkg-deb`.
 
 The version string lives in the top-level `VERSION` file (e.g. `0.1.0`,
-no leading `v`). `build/build.sh` reads it and bakes it into every
-artifact via `-ldflags "-X main.version=…"`; the macOS `Info.plist`
-gets the same value. Override per-build with an arg or env var:
+no leading `v`). It's `//go:embed`-ed into the binary (`main.go`), so the
+running app reports it at startup and on `GET /version`. `build/build.sh`
+reads the same file to name the artifacts and stamp the macOS `Info.plist`
+and the `.deb` control file — one source, no overrides.
 
 ```sh
-./build/build.sh           # reads VERSION
-./build/build.sh 1.2.3     # overrides
-VERSION=1.2.3 ./build/build.sh
-```
-
-For local dev, the in-source default is `0.0.0-dev` so it's easy to
-tell a `go run .` / `go build` binary from a release.
-
-```sh
-go run .
+go run .          # reports the VERSION file's value
+./build/build.sh  # builds every artifact from the same file
 ```
 
 To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
