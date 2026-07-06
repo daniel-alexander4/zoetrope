@@ -212,3 +212,12 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 │   └── editor.js   config editor sidebar (playlists, items, globals)
 └── build/          Info.plist, .desktop entry, lipo + icon helpers
 ```
+
+## License
+
+Zoetrope is free software, licensed under the **GNU General Public License
+v3.0** — see [LICENSE](LICENSE).
+
+It carries **no third-party dependencies**: the binary is pure Go standard
+library (no `go.sum`), and the embedded UI ships no bundled fonts, scripts, or
+CDN assets. There are therefore no third-party licenses to include.
