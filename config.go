@@ -21,7 +21,8 @@ type Config struct {
 	ShowPositionLabels bool            `json:"showPositionLabels"` // when on, position-sequence patterns draw small labels at each gaze grid point
 	Field              FieldConfig     `json:"field"`
 	Playlists          []NamedPlaylist `json:"playlists"`
-	ActivePlaylist     string          `json:"activePlaylist"` // name of the playlist the engine plays; falls back to playlists[0] when missing
+	ActivePlaylist     string          `json:"activePlaylist"`     // name of the playlist the engine plays; falls back to playlists[0] when missing
+	UpdateCheckEnabled bool            `json:"updateCheckEnabled"` // opt-in: when on, the version pill checks GitHub releases for a newer version. Default off — the only sanctioned outbound call besides openBrowser.
 }
 
 type NamedPlaylist struct {

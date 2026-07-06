@@ -103,6 +103,11 @@
           <input type="checkbox" id="show-position-labels"> Show position labels
         </label>
       </div>
+      <div class="global" title="When on, Zoetrope checks GitHub for a newer release on startup and colors the version pill (green = current, red = update available). Off = no network calls at all.">
+        <label>
+          <input type="checkbox" id="update-check-input"> Check for updates
+        </label>
+      </div>
     </details>
     <div class="global library-row balls-only">
       <span class="group-label">Library</span>
@@ -126,7 +131,7 @@
       <button id="btn-save">Save</button>
       <button id="btn-revert">Revert</button>
       <span id="save-status"></span>
-      <span id="version"></span>
+      <button id="version" type="button" class="is-unknown" title="Version"></button>
       <span class="safety-note">For use with a qualified practitioner. Not a treatment in itself.</span>
     </footer>
   </aside>

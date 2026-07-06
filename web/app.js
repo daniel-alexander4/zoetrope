@@ -555,6 +555,7 @@
       hideHud();
     },
     onConfirm: confirmAction,
+    onUpdateToggle: resetUpdatePill,
   });
 
   // ---- Auto-hide HUD when mouse is idle --------------------------------
@@ -603,10 +604,68 @@
     if (!document.hidden) heartbeat();
   });
 
-  fetch('/version', { cache: 'no-store' })
-    .then(r => r.text())
-    .then(v => { document.getElementById('version').textContent = v.trim(); })
-    .catch(() => {});
+  // ---- Version / update pill -----------------------------------------
+  // Color-coded version display (ported from nib/hespera). The server gates
+  // the actual GitHub call on the "Check for updates" setting, so /update/check
+  // is free (enabled:false, no network) when the toggle is off. State is cached
+  // per session so a reload doesn't re-hit GitHub; toggling the setting clears
+  // the cache and re-checks.
+  const UPD_STATE_KEY = 'zoetrope_update_state';
+  const UPD_CHECKED_KEY = 'zoetrope_update_checked';
+  const versionPill = () => document.getElementById('version');
+
+  function applyPill(st) {
+    const el = versionPill();
+    if (!el || !st) return;
+    el.classList.remove('is-unknown', 'is-current', 'is-outdated');
+    el.classList.add(st.cls);
+    el.textContent = st.text;
+    el.title = st.title;
+    el.dataset.dest = st.dest || '';
+  }
+  function pillStateFrom(d) {
+    const v = 'v' + (d.current || 'dev');
+    if (d.enabled === false)
+      return { cls: 'is-unknown', text: v, title: 'Update checks are off — enable them in settings (' + v + ')' };
+    if (d.updateAvailable)
+      return { cls: 'is-outdated', text: v, dest: d.downloadUrl || d.url || '',
+               title: 'Update available: v' + d.latest + ' — click to download' };
+    if (d.latest)
+      return { cls: 'is-current', text: v, title: 'You’re on the latest version (' + v + ')' };
+    return { cls: 'is-unknown', text: v, title: 'No releases published yet (' + v + ')' };
+  }
+  function fetchUpdate() {
+    return fetch('/update/check', { cache: 'no-store' })
+      .then(r => { if (!r.ok) throw new Error('update check failed'); return r.json(); });
+  }
+  function savePill(st) { try { sessionStorage.setItem(UPD_STATE_KEY, JSON.stringify(st)); } catch (_) {} }
+  function loadPill() { try { return JSON.parse(sessionStorage.getItem(UPD_STATE_KEY)); } catch (_) { return null; } }
+
+  function initUpdatePill() {
+    const cached = loadPill();
+    if (cached) { applyPill(cached); return; }
+    if (sessionStorage.getItem(UPD_CHECKED_KEY)) return; // checked this session; leave last state
+    sessionStorage.setItem(UPD_CHECKED_KEY, '1');
+    fetchUpdate().then(d => { const st = pillStateFrom(d); savePill(st); applyPill(st); }).catch(() => {});
+  }
+  // Toggling the setting (editor) clears the cache and re-checks.
+  function resetUpdatePill() {
+    try { sessionStorage.removeItem(UPD_STATE_KEY); sessionStorage.removeItem(UPD_CHECKED_KEY); } catch (_) {}
+    initUpdatePill();
+  }
+  // Click always re-checks; when an update exists, navigate to the asset so the
+  // browser downloads it (nothing installs automatically). When the toggle is
+  // off the server answers enabled:false, so a click can't phone home either.
+  versionPill()?.addEventListener('click', () => {
+    const el = versionPill();
+    if (el) el.title = 'Checking…';
+    fetchUpdate().then(d => {
+      const st = pillStateFrom(d);
+      savePill(st);
+      applyPill(st);
+      if (d.updateAvailable && st.dest && st.dest.startsWith('https://')) window.location.href = st.dest;
+    }).catch(() => { const e2 = versionPill(); if (e2) e2.title = 'Could not reach the update server'; });
+  });
 
   // ---- Confirm overlay -----------------------------------------------
 
@@ -637,6 +696,7 @@
 
   window.zoetropeEditor.loadConfig().then(() => {
     heartbeat();
+    initUpdatePill();
     play();
     requestAnimationFrame(frame);
   }).catch(err => {

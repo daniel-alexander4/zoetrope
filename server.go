@@ -71,6 +71,10 @@ func newRouter(store *configStore, hb *heartbeat) (http.Handler, error) {
 		_, _ = w.Write([]byte("v" + version + "\n"))
 	})
 
+	// Opt-in update check (gated server-side on the UpdateCheckEnabled toggle;
+	// answers without any network call when off). See update.go / CLAUDE.md.
+	mux.HandleFunc("GET /update/check", updateCheckHandler(store))
+
 	mux.HandleFunc("PUT /config", requireCSRF(func(w http.ResponseWriter, r *http.Request) {
 		var cfg Config
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {

@@ -608,11 +608,35 @@ body.mode-field .balls-only { display: none !important; }
   color: var(--subtext);
 }
 
-#version {
+/* Version pill — color-coded update status. Selectors are scoped under
+   `#editor footer` so they win over the generic `#editor footer button`. */
+#editor footer #version {
+  margin-left: 8px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   font-size: 11px;
-  color: var(--subtext);
-  opacity: 0.6;
+  line-height: 1;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  cursor: pointer;
+}
+#editor footer #version.is-unknown {
+  background: rgba(249, 226, 175, 0.14); /* Catppuccin yellow */
+  color: #f9e2af;
+  border-color: rgba(249, 226, 175, 0.35);
+}
+#editor footer #version.is-current {
+  background: rgba(166, 227, 161, 0.14); /* Catppuccin green */
+  color: #a6e3a1;
+  border-color: rgba(166, 227, 161, 0.35);
+}
+#editor footer #version.is-outdated {
+  background: rgba(243, 139, 168, 0.18); /* Catppuccin red */
+  color: #f38ba8;
+  border-color: rgba(243, 139, 168, 0.5);
+}
+#editor footer #version:hover {
+  filter: brightness(1.12);
 }
 
 .item[data-pattern="circle"] .angle-wrap,

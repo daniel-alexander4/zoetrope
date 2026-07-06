@@ -69,6 +69,7 @@
       onFieldLoopToggle: () => {},
       onSaveCloseEditor: () => {},
       onConfirm: (msg, fn) => { if (window.confirm(msg)) fn(); },
+      onUpdateToggle: () => {},
       ...(options || {}),
     };
     populateAddPattern();
@@ -605,6 +606,7 @@
     setVal('linger-input', state.config.lingerSec);
     setVal('linger-lead-input', state.config.lingerLeadFrac ?? 0);
     setChecked('show-position-labels', !!state.config.showPositionLabels);
+    setChecked('update-check-input', !!state.config.updateCheckEnabled);
     applyReadOnly();
     if (state.config.field) {
       setVal('field-speed-input', state.config.field.speed ?? 2);
@@ -742,6 +744,15 @@
     bindInput('linger-input', e => { state.config.lingerSec = +e.target.value; markDirty(); });
     bindInput('linger-lead-input', e => { state.config.lingerLeadFrac = +e.target.value; markDirty(); });
     bindChange('show-position-labels', e => { state.config.showPositionLabels = e.target.checked; markDirty(); });
+    // Update toggle persists immediately (autoSave) so the server honors the
+    // new setting, then re-checks the pill via the host callback.
+    const upd = document.getElementById('update-check-input');
+    if (upd) upd.addEventListener('change', async e => {
+      state.config.updateCheckEnabled = e.target.checked;
+      markDirty();
+      await autoSave();
+      opts.onUpdateToggle();
+    });
   }
 
   function wireTabHandlers() {
