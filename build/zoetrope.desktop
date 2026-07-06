@@ -5,3 +5,6 @@ Comment=A bouncing-ball pattern animator
 Exec=zoetrope
 Icon=zoetrope
 Terminal=false
+# Matches `chromium --class=Zoetrope` (set in browser.go) so the panel uses
+# this entry's themed Icon=zoetrope instead of upscaling the page favicon.
+StartupWMClass=Zoetrope

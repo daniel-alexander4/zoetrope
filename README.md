@@ -24,10 +24,12 @@ On launch, the app:
 2. Reads or creates `config.json` in the OS user config directory
    (`~/.config/zoetrope`, `%APPDATA%\zoetrope`,
    `~/Library/Application Support/zoetrope`).
-3. Opens your default browser to the local URL.
+3. Opens the UI in a dedicated, chromeless app-mode window using an
+   installed Chromium-family browser (Chrome / Edge / Brave / Chromium).
+   If none is found it falls back to a normal tab in your default browser.
 
-Quit the app from its terminal/launch icon, or close it from your OS task
-manager. The browser tab is harmless on its own.
+Quit the app by closing its window — the server notices the window is gone
+and shuts itself down shortly after.
 
 ## UI
 
@@ -192,7 +194,7 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 ├── main.go         entry point, listener, idle-shutdown, signal handling
 ├── config.go       JSON load/save, defaults, atomic writes
 ├── server.go       HTTP routes, embedded asset serving
-├── browser.go      cross-platform default-browser open
+├── browser.go      app-mode window launch, with default-browser tab fallback
 ├── web/            embedded UI (HTML/CSS/JS)
 │   ├── app.js      rAF animation loop, transport, editor wiring
 │   ├── patterns.js SoT for the animation kinematics
