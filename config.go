@@ -25,9 +25,9 @@ type Config struct {
 
 type NamedPlaylist struct {
 	Name     string         `json:"name"`
-	Category string         `json:"category"`        // grouping label in the picker (e.g. "Continuous", "IEMT", "EMDR")
+	Category string         `json:"category"`          // grouping label in the picker (e.g. "Continuous", "IEMT", "EMDR")
 	Builtin  bool           `json:"builtin,omitempty"` // ships in defaultConfig; read-only in the editor. Duplicate to make an editable copy.
-	Loop     bool           `json:"loop"`            // true → cycle back to the first item after the last; false → rewind to the start and stop
+	Loop     bool           `json:"loop"`              // true → cycle back to the first item after the last; false → rewind to the start and stop
 	Items    []PlaylistItem `json:"items"`
 }
 
@@ -43,7 +43,7 @@ type FieldConfig struct {
 
 type PlaylistItem struct {
 	Pattern   string  `json:"pattern"`
-	Name      string  `json:"name,omitempty"`  // optional human-readable label (overrides the pattern default in the editor / now-playing)
+	Name      string  `json:"name,omitempty"` // optional human-readable label (overrides the pattern default in the editor / now-playing)
 	Color     string  `json:"color"`
 	Repeats   int     `json:"repeats"`
 	Speed     float64 `json:"speed,omitempty"` // per-item speed override on the 0–10 scale; absent → follow the global config.speed
@@ -52,12 +52,16 @@ type PlaylistItem struct {
 	// Serpentine + lightbulbs (lanes); serpentine-only (cornerRadius, startCorner):
 	Lanes        int     `json:"lanes,omitempty"`        // raster lane count (2–8); absent → 3
 	CornerRadius float64 `json:"cornerRadius,omitempty"` // serpentine U-turn roundness 0–1; absent → 0 (square)
-	StartCorner  string  `json:"startCorner,omitempty"` // serpentine start corner 'tl'/'tr'; absent → 'tl'
+	StartCorner  string  `json:"startCorner,omitempty"`  // serpentine start corner 'tl'/'tr'; absent → 'tl'
 	BulbSize     float64 `json:"bulbSize,omitempty"`     // lightbulbs bulb radius 0–1; absent → 0.3
 	// Position-sequence patterns only:
-	Steps      []SequenceStep `json:"steps,omitempty"`
-	DwellSec   float64        `json:"dwellSec,omitempty"`   // default per-step dwell time (seconds); 0 → 1.5s fallback in the engine
-	TransitSec float64        `json:"transitSec,omitempty"` // default smooth-pursuit transit time between steps (seconds); 0 → 0.8s fallback
+	Steps    []SequenceStep `json:"steps,omitempty"`
+	DwellSec float64        `json:"dwellSec,omitempty"` // default per-step dwell time (seconds); 0 → 1.5s fallback in the engine
+	// No omitempty: transit=0 is a meaningful value (instant jump = saccade
+	// training). With omitempty an explicit 0 would drop from the JSON and
+	// read back as the engine's 0.8s smooth-pursuit fallback, silently
+	// breaking saccade playlists and the editor's transit=0 setting.
+	TransitSec float64 `json:"transitSec"` // smooth-pursuit transit between steps (s); 0 = instant jump (saccade)
 }
 
 type SequenceStep struct {
@@ -66,11 +70,11 @@ type SequenceStep struct {
 
 func defaultConfig() Config {
 	return Config{
-		Mode:             "balls",
-		Background:       "#0e0e16",
-		BallSize:         80,
-		Speed:            2,
-		LingerLeadFrac:   0.35,
+		Mode:           "balls",
+		Background:     "#0e0e16",
+		BallSize:       80,
+		Speed:          2,
+		LingerLeadFrac: 0.35,
 		Field: FieldConfig{
 			Speed:            2,
 			Palette:          "Happy",
@@ -124,6 +128,46 @@ func defaultConfig() Config {
 							{Position: "lateral-l"}, {Position: "up-l"},
 						},
 					},
+				},
+			},
+			{
+				Name: "EMDR · Horizontal (draft)", Category: "EMDR", Builtin: true, Loop: false,
+				Items: []PlaylistItem{
+					{Pattern: "h-sweep", Name: "EMDR · Bilateral set", Color: "#74c7ec", Repeats: 24, Speed: 6},
+				},
+			},
+			{
+				Name: "Saccades (draft)", Category: "Saccades", Builtin: true, Loop: true,
+				Items: []PlaylistItem{
+					{
+						Pattern: "position-sequence", Name: "Saccades · Horizontal",
+						Color: "#f9e2af", Repeats: 8, DwellSec: 0.5, TransitSec: 0,
+						Steps: []SequenceStep{{Position: "lateral-l"}, {Position: "lateral-r"}},
+					},
+					{
+						Pattern: "position-sequence", Name: "Saccades · Vertical",
+						Color: "#f9e2af", Repeats: 8, DwellSec: 0.5, TransitSec: 0,
+						Steps: []SequenceStep{{Position: "up"}, {Position: "down"}},
+					},
+				},
+			},
+			{
+				Name: "Anti-saccade (draft)", Category: "Saccades", Builtin: true, Loop: true,
+				Items: []PlaylistItem{
+					{
+						Pattern: "position-sequence", Name: "Anti-saccade · look away from the dot",
+						Color: "#fab387", Repeats: 8, DwellSec: 0.5, TransitSec: 0,
+						Steps: []SequenceStep{{Position: "lateral-l"}, {Position: "lateral-r"}},
+					},
+				},
+			},
+			{
+				Name: "Smooth Pursuit (draft)", Category: "Pursuit", Builtin: true, Loop: true,
+				Items: []PlaylistItem{
+					{Pattern: "circle", Color: "#a6e3a1", Repeats: 3, Direction: "cw"},
+					{Pattern: "infinity-h", Color: "#89b4fa", Repeats: 3, Direction: "cw"},
+					{Pattern: "infinity-v", Color: "#cba6f7", Repeats: 3, Direction: "cw"},
+					{Pattern: "fig8-h", Color: "#89dceb", Repeats: 3, Direction: "cw"},
 				},
 			},
 		},

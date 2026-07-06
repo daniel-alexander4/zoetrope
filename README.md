@@ -116,8 +116,10 @@ down-l     down      down-r
 
 Per-item `dwellSec` (default 1.5s) is the time the ball holds at each
 position. `transitSec` (default 0.8s) is the smooth-pursuit time between
-positions (cosine ease-in-out). The global `speed` knob scales the whole
-sequence: `speed = 2` honors the configured dwell/transit; higher = faster.
+positions (cosine ease-in-out); set it to `0` for an instant jump (saccade
+training) instead of smooth pursuit. The global `speed` knob scales the
+whole sequence: `speed = 2` honors the configured dwell/transit; higher =
+faster.
 Toggle **Show position labels** in the editor to overlay grid labels —
 useful while learning the positions, off for live sessions. The optional
 per-item `name` field overrides the pattern's default label in the editor
@@ -140,6 +142,15 @@ the chosen playlist. The default config ships:
   bounce patterns, active on first launch.
 - `IEMT · Identity (draft)` (IEMT)
 - `IEMT · Emotion (draft)` (IEMT)
+- `EMDR · Horizontal (draft)` (EMDR) — a sustained horizontal bilateral set;
+  Loop is off, so it plays one set of passes and stops (re-engage play for
+  the next set).
+- `Saccades (draft)` (Saccades) — horizontal + vertical saccade drills using
+  instant `transitSec: 0` jumps between the lateral / vertical targets.
+- `Anti-saccade (draft)` (Saccades) — the same jump motion; the practitioner
+  cues the patient to look *away* from the dot.
+- `Smooth Pursuit (draft)` (Pursuit) — a curated continuous-tracking set
+  (circle, infinity, figure-8).
 
 New playlists default to the currently-active playlist's category;
 **+ New category…** in the Category dropdown lets you start a fresh
