@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -207,10 +208,55 @@ func (s *configStore) load() error {
 	}
 	cfg := defaultConfig()
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("parse %s: %w", s.path, err)
+		// Corrupt config: keep running on defaults rather than refusing to
+		// start. The bad file stays on disk (left for inspection); the next
+		// save from the editor overwrites it — no manual delete required.
+		log.Printf("config %s is unparseable (%v); using defaults", s.path, err)
+		s.cfg = defaultConfig()
+		return nil
 	}
+	cfg.Playlists = reconcileBuiltins(cfg.Playlists)
 	s.cfg = cfg
 	return nil
+}
+
+// reconcileBuiltins makes the Builtin:true playlists genuinely code-owned. A
+// JSON array unmarshal replaces the whole playlists slice with the on-disk
+// one, so builtins added to defaultConfig() after a config was first saved
+// never appear. This keeps the user's own (non-builtin) playlists exactly as
+// saved, refreshes each persisted builtin from defaultConfig() by name, drops
+// builtins the code no longer ships, and appends code builtins missing from
+// the saved config. The Builtin flag only ever originates in defaultConfig()
+// (duplicated/new playlists don't set it), so user playlists are never touched.
+func reconcileBuiltins(saved []NamedPlaylist) []NamedPlaylist {
+	codeByName := make(map[string]NamedPlaylist)
+	var codeOrder []string
+	for _, p := range defaultConfig().Playlists {
+		if p.Builtin {
+			codeByName[p.Name] = p
+			codeOrder = append(codeOrder, p.Name)
+		}
+	}
+	out := make([]NamedPlaylist, 0, len(saved)+len(codeOrder))
+	used := make(map[string]bool)
+	for _, p := range saved {
+		if !p.Builtin {
+			out = append(out, p) // user playlist — keep as-is
+			continue
+		}
+		if cb, ok := codeByName[p.Name]; ok && !used[p.Name] {
+			out = append(out, cb) // refresh persisted builtin from code
+			used[p.Name] = true
+		}
+		// else: a builtin the code dropped, or a duplicate — discard
+	}
+	for _, name := range codeOrder {
+		if !used[name] {
+			out = append(out, codeByName[name]) // new builtin — append
+			used[name] = true
+		}
+	}
+	return out
 }
 
 func (s *configStore) Get() Config {
