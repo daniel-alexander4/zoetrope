@@ -172,6 +172,23 @@ func defaultConfig() Config {
 					{Pattern: "fig8-h", Color: "#89dceb", Repeats: 3, Direction: "cw"},
 				},
 			},
+			{
+				// Single-step position-sequence holds: the ball sits still at one
+				// gaze target (from == to, so no motion). One item per position so
+				// the practitioner navigates with next/back and pauses to hold.
+				Name: "Fixation (draft)", Category: "Fixation", Builtin: true, Loop: false,
+				Items: []PlaylistItem{
+					{Pattern: "position-sequence", Name: "Fixation · Center", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "center"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Up", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "up"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Down", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "down"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Left", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "lateral-l"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Right", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "lateral-r"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Up-Left", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "up-l"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Up-Right", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "up-r"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Down-Left", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "down-l"}}},
+					{Pattern: "position-sequence", Name: "Fixation · Down-Right", Color: "#cdd6f4", Repeats: 1, DwellSec: 30, TransitSec: 0, Steps: []SequenceStep{{Position: "down-r"}}},
+				},
+			},
 		},
 	}
 }
@@ -208,6 +225,14 @@ func (s *configStore) load() error {
 		return fmt.Errorf("read %s: %w", s.path, err)
 	}
 	cfg := defaultConfig()
+	// Unmarshal playlists into a fresh slice. json.Unmarshal reuses a
+	// pre-populated slice's backing array, so a user playlist whose JSON
+	// omits "builtin" (i.e. false) would inherit the Builtin flag of whatever
+	// default playlist previously occupied that slot — and reconcileBuiltins
+	// would then drop it as an orphan. Nil-ing first gives every entry a fresh
+	// zero struct (Builtin:false when absent). Scalar fields still keep the
+	// defaults seeded above.
+	cfg.Playlists = nil
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		// Corrupt config: keep running on defaults rather than refusing to
 		// start. The bad file stays on disk (left for inspection); the next
@@ -216,7 +241,14 @@ func (s *configStore) load() error {
 		s.cfg = defaultConfig()
 		return nil
 	}
-	cfg.Playlists = reconcileBuiltins(cfg.Playlists)
+	if len(cfg.Playlists) == 0 {
+		// A config with no playlists at all (never produced by the editor):
+		// fall back to the full default set, which includes the Default
+		// playlist reconcileBuiltins wouldn't re-add on its own.
+		cfg.Playlists = defaultConfig().Playlists
+	} else {
+		cfg.Playlists = reconcileBuiltins(cfg.Playlists)
+	}
 	s.cfg = cfg
 	return nil
 }

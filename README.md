@@ -151,6 +151,10 @@ the chosen playlist. The default config ships:
   cues the patient to look *away* from the dot.
 - `Smooth Pursuit (draft)` (Pursuit) — a curated continuous-tracking set
   (circle, infinity, figure-8).
+- `Fixation (draft)` (Fixation) — nine single-step holds (center + the eight
+  eccentric targets); the ball sits still at one position. Navigate with
+  next/back and pause to hold indefinitely; `dwellSec` sets the auto-advance
+  time. A steady target for brainspotting / gaze-holding-endurance work.
 
 New playlists default to the currently-active playlist's category;
 **+ New category…** in the Category dropdown lets you start a fresh
