@@ -215,8 +215,8 @@ To cut a release: bump `VERSION`, commit, tag `vX.Y.Z`, rebuild.
 
 ## License
 
-Zoetrope is free software, licensed under the **GNU General Public License
-v3.0** — see [LICENSE](LICENSE).
+Zoetrope is free software, licensed under the **GNU Affero General Public
+License v3.0** — see [LICENSE](LICENSE).
 
 It carries **no third-party dependencies**: the binary is pure Go standard
 library (no `go.sum`), and the embedded UI ships no bundled fonts, scripts, or
